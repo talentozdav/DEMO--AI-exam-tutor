@@ -1,0 +1,8 @@
+{
+  "name": "DEMO - AI-Powered Exam Prep for WAEC, NECO & JAMB",
+  "description": "DEMO (Digital Exam Mentor) is Nigeria's leading AI-powered study companion for WAEC, NECO, and JAMB candidates. Master CBT simulations, get personalized AI tutoring, and ace your SSCE exams with confidence.",
+  "requestFramePermissions": [
+    "microphone",
+    "camera"
+  ]
+}
