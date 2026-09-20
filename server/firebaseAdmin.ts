@@ -3,18 +3,13 @@ import { getFirestore, Firestore } from 'firebase-admin/firestore';
 import { getAuth, Auth } from 'firebase-admin/auth';
 import firebaseConfig from '../firebase-applet-config.json';
 
-// Dynamic resolution of Firebase project parameters
-const resolvedProjectId = process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID || firebaseConfig.projectId;
-const resolvedStorageBucket = process.env.FIREBASE_STORAGE_BUCKET || process.env.VITE_FIREBASE_STORAGE_BUCKET || firebaseConfig.storageBucket;
-const resolvedDatabaseId = process.env.FIREBASE_DATABASE_ID || process.env.VITE_FIREBASE_DATABASE_ID || firebaseConfig.firestoreDatabaseId;
-
 // Initialize Firebase Admin SDK
 let adminApp: App;
 if (!getApps().length) {
   try {
     adminApp = initializeApp({
-      projectId: resolvedProjectId,
-      storageBucket: resolvedStorageBucket,
+      projectId: firebaseConfig.projectId,
+      storageBucket: firebaseConfig.storageBucket,
     });
   } catch (err) {
     console.warn('Firebase Admin default initialization warning:', err);
@@ -30,8 +25,8 @@ export const adminAuth: Auth = getAuth(adminApp);
 let dbInstance: Firestore;
 try {
   // Target the specific firestore database ID
-  if (resolvedDatabaseId && resolvedDatabaseId !== '(default)') {
-    dbInstance = getFirestore(adminApp, resolvedDatabaseId);
+  if (firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== '(default)') {
+    dbInstance = getFirestore(adminApp, firebaseConfig.firestoreDatabaseId);
   } else {
     dbInstance = getFirestore(adminApp);
   }
@@ -60,12 +55,10 @@ export async function verifyUserToken(authHeader?: string): Promise<AuthUser | n
 
   try {
     const decoded = await adminAuth.verifyIdToken(token);
-    // Secure verification: check custom claims (admin: true or role: 'admin') and authorized admin emails
-    const hasAdminClaim = decoded.admin === true || decoded.role === 'admin';
     const isAdminEmail = decoded.email === 'democustomersupportservices@gmail.com' ||
                          decoded.email === 'admin@digitalexammentor.ng';
     const role: 'student' | 'subscriber' | 'admin' = 
-      hasAdminClaim || isAdminEmail 
+      decoded.role === 'admin' || isAdminEmail 
         ? 'admin' 
         : decoded.role === 'subscriber' 
           ? 'subscriber' 
@@ -77,11 +70,7 @@ export async function verifyUserToken(authHeader?: string): Promise<AuthUser | n
       role
     };
   } catch (verifyError) {
-    if (process.env.NODE_ENV === 'production') {
-      console.error('Cryptographic token verification failed in production:', (verifyError as any)?.message);
-      return null;
-    }
-    // Development-only fallback: decode valid Firebase JWT if admin credentials are in local dev emulator
+    // Development fallback: decode valid Firebase JWT if admin cert is not mounted locally
     try {
       const parts = token.split('.');
       if (parts.length === 3) {
@@ -93,29 +82,13 @@ export async function verifyUserToken(authHeader?: string): Promise<AuthUser | n
           return {
             uid,
             email: payload.email || '',
-            role: payload.admin === true || payload.role === 'admin' || isAdminEmail ? 'admin' : 'student'
+            role: payload.role === 'admin' || isAdminEmail ? 'admin' : 'student'
           };
         }
       }
     } catch (parseErr) {
-      // invalid token format
+      // invalid token
     }
     return null;
-  }
-}
-
-/**
- * Assign custom claims to a user via Firebase Admin.
- */
-export async function setUserRoleClaim(uid: string, role: 'student' | 'subscriber' | 'admin') {
-  try {
-    await adminAuth.setCustomUserClaims(uid, {
-      role,
-      admin: role === 'admin'
-    });
-    return true;
-  } catch (err) {
-    console.error(`Failed to set custom claim for user ${uid}:`, err);
-    return false;
   }
 }

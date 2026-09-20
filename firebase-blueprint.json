@@ -135,88 +135,6 @@
         "timestamp": { "type": "number" }
       },
       "required": ["adminId", "action", "timestamp"]
-    },
-    "Subject": {
-      "title": "Subject",
-      "description": "Exam syllabus subject definition.",
-      "type": "object",
-      "properties": {
-        "id": { "type": "string" },
-        "name": { "type": "string" },
-        "examTypes": { "type": "array", "items": { "type": "string" } },
-        "topicsCount": { "type": "number" }
-      },
-      "required": ["id", "name"]
-    },
-    "Score": {
-      "title": "Score",
-      "description": "Individual exam score log record.",
-      "type": "object",
-      "properties": {
-        "userId": { "type": "string" },
-        "examType": { "type": "string" },
-        "subject": { "type": "string" },
-        "score": { "type": "number" },
-        "total": { "type": "number" },
-        "timestamp": { "type": "number" }
-      },
-      "required": ["userId", "examType", "score", "total", "timestamp"]
-    },
-    "EssaySubmission": {
-      "title": "EssaySubmission",
-      "description": "Theory or essay answers submitted for AI evaluation.",
-      "type": "object",
-      "properties": {
-        "userId": { "type": "string" },
-        "examType": { "type": "string" },
-        "subject": { "type": "string" },
-        "question": { "type": "string" },
-        "answer": { "type": "string" },
-        "score": { "type": "number" },
-        "feedback": { "type": "object" },
-        "submittedAt": { "type": "number" }
-      },
-      "required": ["userId", "examType", "question", "answer", "submittedAt"]
-    },
-    "AIConversation": {
-      "title": "AIConversation",
-      "description": "Persisted AI Tutor dialogue thread.",
-      "type": "object",
-      "properties": {
-        "userId": { "type": "string" },
-        "subject": { "type": "string" },
-        "examType": { "type": "string" },
-        "messages": { "type": "array" },
-        "updatedAt": { "type": "number" }
-      },
-      "required": ["userId", "updatedAt"]
-    },
-    "UserUsage": {
-      "title": "UserUsage",
-      "description": "Daily and monthly feature usage counters.",
-      "type": "object",
-      "properties": {
-        "userId": { "type": "string" },
-        "questionsCount": { "type": "number" },
-        "aiTutorCount": { "type": "number" },
-        "essaysCount": { "type": "number" },
-        "lastReset": { "type": "number" }
-      },
-      "required": ["userId"]
-    },
-    "Notification": {
-      "title": "Notification",
-      "description": "Student in-app reminders and exam countdown alerts.",
-      "type": "object",
-      "properties": {
-        "userId": { "type": "string" },
-        "title": { "type": "string" },
-        "message": { "type": "string" },
-        "type": { "type": "string" },
-        "read": { "type": "boolean" },
-        "createdAt": { "type": "number" }
-      },
-      "required": ["userId", "title", "message", "createdAt"]
     }
   },
   "firestore": {
@@ -240,30 +158,6 @@
       "schema": { "$ref": "#/entities/ExamSession" },
       "description": "Student CBT test results and mock exam sessions."
     },
-    "/scores/{scoreId}": {
-      "schema": { "$ref": "#/entities/Score" },
-      "description": "Individual score history entries."
-    },
-    "/essay_submissions/{submissionId}": {
-      "schema": { "$ref": "#/entities/EssaySubmission" },
-      "description": "Student essay coach and theory submissions."
-    },
-    "/ai_conversations/{conversationId}": {
-      "schema": { "$ref": "#/entities/AIConversation" },
-      "description": "Saved AI Tutor conversation threads."
-    },
-    "/usage/{userId}": {
-      "schema": { "$ref": "#/entities/UserUsage" },
-      "description": "User token and question generation quotas."
-    },
-    "/subjects/{subjectId}": {
-      "schema": { "$ref": "#/entities/Subject" },
-      "description": "Official subjects list."
-    },
-    "/notifications/{notificationId}": {
-      "schema": { "$ref": "#/entities/Notification" },
-      "description": "Student alerts and reminders."
-    },
     "/ai_interactions/{interactionId}": {
       "schema": { "$ref": "#/entities/AIInteraction" },
       "description": "AI request logs for audit and rate-limiting."
@@ -276,17 +170,9 @@
       "schema": { "$ref": "#/entities/QuestionBankItem" },
       "description": "Questions bank repository."
     },
-    "/questions/{questionId}": {
-      "schema": { "$ref": "#/entities/QuestionBankItem" },
-      "description": "Alias for questions bank repository."
-    },
     "/admin_audit_logs/{logId}": {
       "schema": { "$ref": "#/entities/AdminAuditLog" },
       "description": "Admin action audit logs."
-    },
-    "/audit_logs/{logId}": {
-      "schema": { "$ref": "#/entities/AdminAuditLog" },
-      "description": "General system audit logs."
     }
   }
 }
