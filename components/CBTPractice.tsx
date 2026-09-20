@@ -3,6 +3,8 @@ import React, { useState, useEffect } from 'react';
 import { UserProfile, Question } from '../types';
 import { MOCK_QUESTIONS } from '../constants';
 import { generatePracticeQuestions } from '../services/geminiService';
+import { db, auth } from '../firebase';
+import { collection, addDoc } from 'firebase/firestore';
 import { ChevronLeft, ChevronRight, Timer, Flag, CheckCircle, Info, Sparkles, Zap, Loader2, Target, Clock, Trophy, ArrowRight, XCircle } from 'lucide-react';
 
 interface Props {
@@ -64,17 +66,18 @@ const CBTPractice: React.FC<Props> = ({ onBack, profile, onUpdateProfile }) => {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const handleFinish = () => {
+  const handleFinish = async () => {
     if (confirm("Are you sure you want to submit your CBT mock?")) {
       const score = questions.reduce((acc, q) => acc + (answers[q.id] === q.correctAnswer ? 1 : 0), 0);
       const subject = profile.selectedSubjects.JAMB[0] || 'Mathematics';
+      const now = Date.now();
       
       const newScore = {
         examType: 'JAMB' as const,
         subject,
         score,
         total: questions.length,
-        timestamp: Date.now()
+        timestamp: now
       };
 
       const updatedProfile = {
@@ -83,6 +86,23 @@ const CBTPractice: React.FC<Props> = ({ onBack, profile, onUpdateProfile }) => {
       };
 
       onUpdateProfile(updatedProfile);
+
+      // Record authoritative exam session in Firestore
+      if (auth.currentUser) {
+        try {
+          await addDoc(collection(db, 'exam_sessions'), {
+            userId: auth.currentUser.uid,
+            examType: 'JAMB',
+            subject,
+            score,
+            total: questions.length,
+            createdAt: now
+          });
+        } catch (err) {
+          console.warn('Failed to record exam session:', err);
+        }
+      }
+
       setIsFinished(true);
     }
   };

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Share2, Copy, Users, Trophy, Gift, CheckCircle2, AlertCircle, ExternalLink } from 'lucide-react';
+import { Share2, Copy, Users, Trophy, Gift, CheckCircle2, X, ExternalLink } from 'lucide-react';
 import { UserProfile } from '../types';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -12,9 +12,10 @@ function cn(...inputs: ClassValue[]) {
 interface ReferralDashboardProps {
   user: UserProfile;
   onClose: () => void;
+  onShowLeaderboard?: () => void;
 }
 
-const ReferralDashboard: React.FC<ReferralDashboardProps> = ({ user, onClose }) => {
+const ReferralDashboard: React.FC<ReferralDashboardProps> = ({ user, onClose, onShowLeaderboard }) => {
   const [copied, setCopied] = useState(false);
   const referralLink = `${window.location.origin}?ref=${user.referralCode || 'DEMO'}`;
   const shareMessage = `I just found a free WAEC and JAMB practice site.
@@ -71,7 +72,7 @@ Practice here: ${referralLink}`;
             onClick={onClose}
             className="p-2 hover:bg-gray-200/50 rounded-full transition-colors"
           >
-            <AlertCircle className="rotate-45 text-gray-400" size={24} />
+            <X className="text-gray-400" size={24} />
           </button>
         </div>
 
@@ -160,7 +161,13 @@ Practice here: ${referralLink}`;
                 <div className="text-xs text-gray-500">See how you rank against others</div>
               </div>
             </div>
-            <button className="text-emerald-600 hover:text-emerald-700 font-medium text-sm flex items-center gap-1">
+            <button 
+              onClick={() => {
+                onClose();
+                onShowLeaderboard?.();
+              }}
+              className="text-emerald-600 hover:text-emerald-700 font-medium text-sm flex items-center gap-1"
+            >
               View All <ExternalLink size={14} />
             </button>
           </div>

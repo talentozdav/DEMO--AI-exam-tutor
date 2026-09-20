@@ -12,9 +12,10 @@ interface Props {
   onStartCBT: () => void;
   onShowContact: () => void;
   onShowReferral?: () => void;
+  onShowAdmin?: () => void;
 }
 
-const Dashboard: React.FC<Props> = ({ profile, onNavigate, onStartEssay, onStartCBT, onShowContact, onShowReferral }) => {
+const Dashboard: React.FC<Props> = ({ profile, onNavigate, onStartEssay, onStartCBT, onShowContact, onShowReferral, onShowAdmin }) => {
   
   const calculateDaysLeft = (dateString: string) => {
     if (!dateString) return null;
@@ -238,6 +239,25 @@ const Dashboard: React.FC<Props> = ({ profile, onNavigate, onStartEssay, onStart
           </button>
         )}
       </motion.section>
+
+      {/* Admin Section */}
+      {(profile.email === 'democustomersupportservices@gmail.com' || (profile as any).role === 'admin') && onShowAdmin && (
+        <motion.section variants={item}>
+          <button 
+            onClick={onShowAdmin}
+            className="w-full p-4 rounded-3xl bg-slate-900 text-white border border-slate-800 flex items-center gap-4 shadow-sm hover:bg-slate-800 transition-colors"
+          >
+            <div className="w-10 h-10 bg-emerald-600/20 text-emerald-400 rounded-2xl flex items-center justify-center">
+              <Target className="w-5 h-5 text-emerald-400" />
+            </div>
+            <div className="text-left flex-1">
+              <p className="font-black text-xs uppercase tracking-wider text-emerald-400">Admin Control Center</p>
+              <p className="text-[10px] text-slate-300 font-medium">Manage metrics, overrides & audit logs</p>
+            </div>
+            <ArrowRight className="w-5 h-5 text-slate-400" />
+          </button>
+        </motion.section>
+      )}
 
       {/* Help Section */}
       <motion.section variants={item} className="pb-8">

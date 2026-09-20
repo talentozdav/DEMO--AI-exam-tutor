@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://ais-dev-pjj3d2gcbhzllyr5l3iudd-481217797197.europe-west2.run.app/</loc>
+    <lastmod>2026-09-20</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://ais-dev-pjj3d2gcbhzllyr5l3iudd-481217797197.europe-west2.run.app/sitemap.xml</loc>
+    <lastmod>2026-09-20</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+  </url>
+  <url>
+    <loc>https://ais-dev-pjj3d2gcbhzllyr5l3iudd-481217797197.europe-west2.run.app/#waec-prep</loc>
+    <lastmod>2026-09-20</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://ais-dev-pjj3d2gcbhzllyr5l3iudd-481217797197.europe-west2.run.app/#neco-prep</loc>
+    <lastmod>2026-09-20</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://ais-dev-pjj3d2gcbhzllyr5l3iudd-481217797197.europe-west2.run.app/#jamb-cbt</loc>
+    <lastmod>2026-09-20</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+</urlset>

@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { UserProfile, ExamType } from './types';
+import { auth, db, signInWithPopup, googleProvider, onAuthStateChanged, signOut, doc, getDoc, setDoc, onSnapshot, writeBatch, increment, collection, query, orderBy, limit, getDocs, where } from './firebase';
 import Dashboard from './components/Dashboard';
 import Onboarding from './components/Onboarding';
 import AITutor from './components/AITutor';
@@ -17,6 +18,7 @@ import InstallGuide from './components/InstallGuide';
 import Subscription from './components/Subscription';
 import ReferralDashboard from './components/ReferralDashboard';
 import Leaderboard from './components/Leaderboard';
+import AdminPanel from './components/AdminPanel';
 import { Home, BookOpen, MessageSquare, HelpCircle, User, BarChart2, LogOut, X, GraduationCap, Download, Star, ChevronLeft, Share2, Trophy, Gift } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from './lib/utils';
@@ -38,6 +40,54 @@ const App: React.FC = () => {
   const [showReferralDashboard, setShowReferralDashboard] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [showReferralPopup, setShowReferralPopup] = useState(false);
+  const [showAdmin, setShowAdmin] = useState(false);
+  const [hasSeenPopup, setHasSeenPopup] = useState(false);
+  const [subscriptionState, setSubscriptionState] = useState<any>(null);
+
+  // Listen for backend trial-expired event
+  useEffect(() => {
+    const handleTrialExpired = () => {
+      setShowSubscription(true);
+    };
+    window.addEventListener('trial-expired', handleTrialExpired);
+    return () => window.removeEventListener('trial-expired', handleTrialExpired);
+  }, []);
+
+  // Trigger referral popup after login
+  useEffect(() => {
+    if (profile && !hasSeenPopup && activeTab === 'home' && (profile.activeReferralCount || 0) < 20) {
+      const timer = setTimeout(() => {
+        setShowReferralPopup(true);
+        setHasSeenPopup(true);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [profile, hasSeenPopup, activeTab]);
+
+  // Grant premium reward for 20 active referrals via server endpoint
+  useEffect(() => {
+    if (profile && (profile.activeReferralCount || 0) >= 20 && !profile.isPremium && !profile.referralRewardsClaimed) {
+      const claimReward = async () => {
+        try {
+          const user = auth.currentUser;
+          if (!user) return;
+          const token = await user.getIdToken();
+          const res = await fetch('/api/redeemReferralReward', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (res.ok) {
+            alert("Congratulations! You've reached 20 active referrals and unlocked the full WAEC and NECO questions pack for 1 year!");
+          }
+        } catch (e) {
+          console.error("Error claiming referral reward:", e);
+        }
+      };
+      claimReward();
+    }
+  }, [profile?.activeReferralCount, profile?.isPremium, profile?.referralRewardsClaimed]);
+  const [isLoadingAuth, setIsLoadingAuth] = useState(true);
+  const [leaderboardEntries, setLeaderboardEntries] = useState<any[]>([]);
 
   useEffect(() => {
     // Check for referral code in URL
@@ -51,67 +101,277 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const saved = localStorage.getItem('examace_profile');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      
-      // Legacy user fix: ensure trialStartedAt exists
-      if (!parsed.trialStartedAt) {
-        parsed.trialStartedAt = Date.now();
-      }
-      
-      // Ensure referralCode exists for legacy users
-      if (!parsed.referralCode) {
-        parsed.referralCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-        parsed.referralCount = 0;
-        parsed.activeReferralCount = 0;
-        parsed.referrals = [];
-      }
-      
-      localStorage.setItem('examace_profile', JSON.stringify(parsed));
-      setProfile(parsed);
-      if (!parsed.exams || parsed.exams.length === 0) {
-        setIsStartingOnboarding(true);
-      }
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        // User is signed in, fetch profile from Firestore
+        const docRef = doc(db, 'users', user.uid);
+        const subRef = doc(db, 'subscriptions', user.uid);
+        
+        // Listen to authoritative subscription status
+        const unsubSub = onSnapshot(subRef, (subSnap) => {
+          if (subSnap.exists()) {
+            setSubscriptionState(subSnap.data());
+          }
+        }, (err) => console.warn('Sub listener error:', err));
 
-      // Show referral popup once if not premium and not seen
-      const hasSeenPopup = localStorage.getItem('examace_referral_popup_seen');
-      if (!parsed.isPremium && !hasSeenPopup) {
-        setTimeout(() => {
-          setShowReferralPopup(true);
-          localStorage.setItem('examace_referral_popup_seen', 'true');
-        }, 5000);
+        // Fetch entitlements from server
+        try {
+          const token = await user.getIdToken();
+          const entRes = await fetch('/api/getUserEntitlements', {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (entRes.ok) {
+            const ent = await entRes.json();
+            setSubscriptionState(ent);
+          }
+        } catch (e) {
+          console.warn('Could not fetch entitlements:', e);
+        }
+
+        // Set up real-time listener for the user profile
+        const unsubProfile = onSnapshot(docRef, (docSnap) => {
+          if (docSnap.exists()) {
+            const data = docSnap.data() as UserProfile;
+            setProfile(data);
+            
+            // Show referral popup once if not premium and not seen
+            const hasSeenPopup = localStorage.getItem('examace_referral_popup_seen');
+            if (!data.isPremium && !hasSeenPopup) {
+              setTimeout(() => {
+                setShowReferralPopup(true);
+                localStorage.setItem('examace_referral_popup_seen', 'true');
+              }, 5000);
+            }
+          } else {
+            // New user, needs onboarding
+            setProfile(null);
+            setIsStartingOnboarding(true);
+          }
+          setIsLoadingAuth(false);
+        }, (error) => {
+          console.error("Error fetching profile:", error);
+          setIsLoadingAuth(false);
+        });
+
+        return () => {
+          unsubProfile();
+          unsubSub();
+        };
+      } else {
+        // User is signed out
+        setProfile(null);
+        setSubscriptionState(null);
+        setIsStartingOnboarding(false);
+        setIsLoadingAuth(false);
       }
-    }
+    });
+
+    return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (showLeaderboard) {
+      const fetchLeaderboard = async () => {
+        try {
+          const q = query(collection(db, 'users_public'), orderBy('activeReferralCount', 'desc'), limit(10));
+          const querySnapshot = await getDocs(q);
+          const entries: any[] = [];
+          querySnapshot.forEach((doc) => {
+            const data = doc.data();
+            entries.push({
+              id: doc.id,
+              name: data.name,
+              activeReferrals: data.activeReferralCount || 0,
+              referrals: data.referralCount || 0,
+              isCurrentUser: auth.currentUser?.uid === doc.id
+            });
+          });
+          setLeaderboardEntries(entries);
+        } catch (error) {
+          console.error("Error fetching leaderboard:", error);
+        }
+      };
+      fetchLeaderboard();
+    }
+  }, [showLeaderboard]);
+
+  const handleLogin = async () => {
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (error) {
+      console.error("Error signing in:", error);
+      alert("Failed to sign in. Please try again.");
+    }
+  };
 
   const generateReferralCode = () => {
     return Math.random().toString(36).substring(2, 8).toUpperCase();
   };
 
-  const handleOnboardingComplete = (newProfile: UserProfile) => {
+  const handleOnboardingComplete = async (newProfile: UserProfile) => {
+    if (!auth.currentUser) return;
+    
     const pendingRef = localStorage.getItem('examace_pending_ref');
-    const profileWithReferral = { 
+    const referralCode = generateReferralCode();
+    
+    const profileWithReferral: UserProfile = { 
       ...newProfile, 
-      trialStartedAt: Date.now(),
-      referralCode: generateReferralCode(),
+      email: auth.currentUser.email || '',
+      referralCode,
       referredBy: pendingRef || undefined,
       referralCount: 0,
       activeReferralCount: 0,
-      referrals: []
+      referrals: [],
+      scores: [],
+      referralRewardsClaimed: false,
+      createdAt: Date.now()
     };
-    setProfile(profileWithReferral);
-    localStorage.setItem('examace_profile', JSON.stringify(profileWithReferral));
-    localStorage.removeItem('examace_pending_ref');
-    setIsStartingOnboarding(false);
+
+    try {
+      const batch = writeBatch(db);
+      
+      // 1. Save private profile
+      const userRef = doc(db, 'users', auth.currentUser.uid);
+      batch.set(userRef, profileWithReferral);
+      
+      // 2. Save public profile
+      const publicRef = doc(db, 'users_public', auth.currentUser.uid);
+      batch.set(publicRef, {
+        name: newProfile.name,
+        referralCode,
+        referralCount: 0,
+        activeReferralCount: 0,
+        createdAt: Date.now()
+      });
+
+      // 3. Handle referral tracking if they were referred
+      if (pendingRef) {
+        // Find the referrer by their referral code
+        const q = query(collection(db, 'users_public'), where('referralCode', '==', pendingRef), limit(1));
+        const querySnapshot = await getDocs(q);
+        
+        if (!querySnapshot.empty) {
+          const referrerDoc = querySnapshot.docs[0];
+          const referrerId = referrerDoc.id;
+          
+          // Create tracking document
+          const referralRef = doc(db, 'referrals', auth.currentUser.uid);
+          batch.set(referralRef, {
+            referrerId,
+            status: 'pending',
+            createdAt: Date.now()
+          });
+          
+          // Increment referrer's total count
+          batch.update(referrerDoc.ref, {
+            referralCount: increment(1)
+          });
+          
+          // Also update the referrer's private profile so their dashboard updates
+          const referrerPrivateRef = doc(db, 'users', referrerId);
+          batch.update(referrerPrivateRef, {
+            referralCount: increment(1)
+          });
+        }
+      }
+
+      await batch.commit();
+      localStorage.removeItem('examace_pending_ref');
+
+      // Initialize server-authoritative trial
+      try {
+        const token = await auth.currentUser.getIdToken();
+        const entRes = await fetch('/api/getUserEntitlements', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (entRes.ok) {
+          const ent = await entRes.json();
+          setSubscriptionState(ent);
+        }
+      } catch (e) {
+        console.warn('Entitlement init warning:', e);
+      }
+
+      setIsStartingOnboarding(false);
+    } catch (error) {
+      console.error("Error saving profile:", error);
+      alert("Failed to save profile. Please try again.");
+    }
   };
 
+  const updateProfile = async (updatedProfile: UserProfile) => {
+    if (!auth.currentUser) return;
+    try {
+      const batch = writeBatch(db);
+      const userRef = doc(db, 'users', auth.currentUser.uid);
+      
+      // Strip managed fields to prevent accidental overwrites from stale state
+      const { 
+        referralCount, 
+        activeReferralCount, 
+        referrals, 
+        referralCode, 
+        referredBy, 
+        isPremium,
+        isSubscribed,
+        subscription,
+        trialStartedAt,
+        role,
+        ...safeUpdate 
+      } = updatedProfile as any;
+      
+      batch.set(userRef, safeUpdate, { merge: true });
+
+      // Check if user just became active (e.g., completed first practice/score)
+      const wasActive = profile?.scores && profile.scores.length > 0;
+      const isNowActive = updatedProfile.scores && updatedProfile.scores.length > 0;
+      
+      if (!wasActive && isNowActive) {
+        // User became active, update referral tracking
+        const referralRef = doc(db, 'referrals', auth.currentUser.uid);
+        const referralSnap = await getDoc(referralRef);
+        
+        if (referralSnap.exists() && referralSnap.data().status === 'pending') {
+          const referrerId = referralSnap.data().referrerId;
+          
+          // Update referral status
+          batch.update(referralRef, { status: 'active' });
+          
+          // Increment referrer's active count
+          const referrerRef = doc(db, 'users_public', referrerId);
+          batch.update(referrerRef, {
+            activeReferralCount: increment(1)
+          });
+          
+          const referrerPrivateRef = doc(db, 'users', referrerId);
+          batch.update(referrerPrivateRef, {
+            activeReferralCount: increment(1)
+          });
+        }
+      }
+
+      await batch.commit();
+    } catch (error) {
+      console.error("Error updating profile:", error);
+    }
+  };
+
+  const isUserPremium = Boolean(
+    profile?.isPremium || 
+    profile?.isSubscribed || 
+    subscriptionState?.status === 'active' || 
+    subscriptionState?.isPremium
+  );
+
   const getTrialStatus = () => {
-    if (!profile || profile.isPremium || profile.isSubscribed) return { expired: false, daysLeft: 3 };
+    if (!profile || isUserPremium) return { expired: false, daysLeft: 3 };
     
+    const now = Date.now();
     const trialDuration = 3 * 24 * 60 * 60 * 1000; // 3 days
-    const elapsed = Date.now() - (profile.trialStartedAt || Date.now());
-    const remaining = trialDuration - elapsed;
+    const trialExpiresAt = subscriptionState?.trialExpiresAt || 
+      (profile.createdAt ? profile.createdAt + trialDuration : now + trialDuration);
+
+    const remaining = trialExpiresAt - now;
     const daysLeft = remaining / (24 * 60 * 60 * 1000);
     
     return {
@@ -122,9 +382,9 @@ const App: React.FC = () => {
 
   const trialStatus = getTrialStatus();
 
-  const handleReset = () => {
+  const handleReset = async () => {
     if (confirm("This will reset your learning progress and exam dates. Continue?")) {
-      if (profile) {
+      if (profile && auth.currentUser) {
         const resetProfile = {
           ...profile,
           exams: [],
@@ -132,8 +392,7 @@ const App: React.FC = () => {
           examDates: { WAEC: '', NECO: '', JAMB: '' },
           weakSubjects: []
         };
-        setProfile(resetProfile);
-        localStorage.setItem('examace_profile', JSON.stringify(resetProfile));
+        await updateProfile(resetProfile);
         setShowProfileModal(false);
         setIsStartingOnboarding(true);
         setActiveTab('home');
@@ -141,25 +400,36 @@ const App: React.FC = () => {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     if (confirm("Are you sure you want to log out?")) {
-      localStorage.removeItem('examace_profile');
-      setProfile(null);
-      setShowProfileModal(false);
-      setIsStartingOnboarding(false);
-      setActiveTab('home');
+      try {
+        await signOut(auth);
+        setShowProfileModal(false);
+        setActiveTab('home');
+      } catch (error) {
+        console.error("Error signing out:", error);
+      }
     }
   };
+
+  if (isLoadingAuth) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="w-12 h-12 border-4 border-emerald-200 border-t-emerald-600 rounded-full animate-spin"></div>
+      </div>
+    );
+  }
 
   if (showPrivacy) return <PrivacyPolicy onBack={() => setShowPrivacy(false)} />;
   if (showTerms) return <TermsOfUse onBack={() => setShowTerms(false)} />;
   if (showContact) return <ContactSupport onBack={() => setShowContact(false)} />;
   if (showInstall) return <InstallGuide onBack={() => setShowInstall(false)} />;
+  if (showAdmin) return <AdminPanel onBack={() => setShowAdmin(false)} />;
 
   if (!profile && !isStartingOnboarding) {
     return (
       <LandingPage 
-        onStart={() => setIsStartingOnboarding(true)} 
+        onStart={handleLogin} 
         onShowPrivacy={() => setShowPrivacy(true)} 
         onShowTerms={() => setShowTerms(true)}
         onShowContact={() => setShowContact(true)}
@@ -173,20 +443,15 @@ const App: React.FC = () => {
   }
 
   // Force subscription if trial expired and not premium
-  if (profile && trialStatus.expired && !profile.isPremium && !profile.isSubscribed) {
+  if (profile && trialStatus.expired && !isUserPremium) {
     return <Subscription profile={profile} onBack={handleLogout} onSuccess={() => {
-      const updatedProfile = { ...profile, isSubscribed: true, isPremium: true };
-      setProfile(updatedProfile);
-      localStorage.setItem('examace_profile', JSON.stringify(updatedProfile));
+      setShowSubscription(false);
     }} />;
   }
 
   // Also allow manual subscription trigger
   if (showSubscription && profile) {
     return <Subscription profile={profile} onBack={() => setShowSubscription(false)} onSuccess={() => {
-      const updatedProfile = { ...profile, isSubscribed: true, isPremium: true };
-      setProfile(updatedProfile);
-      localStorage.setItem('examace_profile', JSON.stringify(updatedProfile));
       setShowSubscription(false);
     }} />;
   }
@@ -202,11 +467,6 @@ const App: React.FC = () => {
       case 'progress': return 'Performance';
       default: return 'DEMO';
     }
-  };
-
-  const updateProfile = (updatedProfile: UserProfile) => {
-    setProfile(updatedProfile);
-    localStorage.setItem('examace_profile', JSON.stringify(updatedProfile));
   };
 
   const renderContent = () => {
@@ -231,6 +491,7 @@ const App: React.FC = () => {
               onStartCBT={() => setShowCBT(true)}
               onShowContact={() => setShowContact(true)}
               onShowReferral={() => setShowReferralDashboard(true)}
+              onShowAdmin={() => setShowAdmin(true)}
             />
           )}
           {activeTab === 'subjects' && <SubjectsList profile={profile!} />}
@@ -391,6 +652,7 @@ const App: React.FC = () => {
           <ReferralDashboard 
             user={profile} 
             onClose={() => setShowReferralDashboard(false)} 
+            onShowLeaderboard={() => setShowLeaderboard(true)}
           />
         )}
       </AnimatePresence>
@@ -400,7 +662,7 @@ const App: React.FC = () => {
         {showLeaderboard && (
           <Leaderboard 
             onClose={() => setShowLeaderboard(false)}
-            entries={[
+            entries={leaderboardEntries.length > 0 ? leaderboardEntries : [
               { id: '1', name: 'Oluwaseun A.', activeReferrals: 42, referrals: 150, rank: 1 },
               { id: '2', name: 'Chidi O.', activeReferrals: 38, referrals: 120, rank: 2 },
               { id: '3', name: 'Amina B.', activeReferrals: 31, referrals: 95, rank: 3 },
@@ -458,6 +720,21 @@ const App: React.FC = () => {
           </div>
         )}
       </AnimatePresence>
+      {/* Floating Share Button */}
+      {profile && !showReferralDashboard && !isStartingOnboarding && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 w-full max-w-md z-40 pointer-events-none flex justify-end px-6">
+          <button
+            onClick={() => setShowReferralDashboard(true)}
+            className="bg-emerald-600 text-white p-4 rounded-full shadow-2xl shadow-emerald-600/40 hover:bg-emerald-700 hover:scale-105 active:scale-95 transition-all flex items-center justify-center group pointer-events-auto"
+            aria-label="Refer a friend"
+          >
+            <Gift className="w-6 h-6 group-hover:animate-bounce" />
+            <span className="absolute right-full mr-4 bg-slate-900 text-white text-xs font-bold py-1.5 px-3 rounded-xl whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+              Invite & Earn
+            </span>
+          </button>
+        </div>
+      )}
     </div>
   );
 };

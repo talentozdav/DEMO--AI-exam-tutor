@@ -28,7 +28,7 @@ const TrialBanner: React.FC<TrialBannerProps> = ({ daysLeft, onUpgrade }) => {
           </p>
           <p className="text-[10px] text-slate-500 font-medium">
             {isLastDay 
-              ? "Upgrade for ₦3,000 to continue learning" 
+              ? "Upgrade for ₦1,000 to continue learning" 
               : "Enjoy full access to all premium features"}
           </p>
         </div>

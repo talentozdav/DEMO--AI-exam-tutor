@@ -46,6 +46,11 @@ export interface UserProfile {
   activeReferralCount?: number;
   referrals?: string[];
   referralRewardsClaimed?: boolean;
+  createdAt?: number;
+  subscription?: {
+    plan: string;
+    expiresAt: string;
+  };
 }
 
 export interface Message {

@@ -30,7 +30,7 @@ const LandingPage: React.FC<Props> = ({ onStart, onShowPrivacy, onShowTerms, onS
             onClick={onStart}
             className="w-full bg-emerald-600 text-white py-4 rounded-2xl font-bold text-lg flex items-center justify-center gap-2 shadow-xl shadow-emerald-200 hover:bg-emerald-700 active:scale-95 transition-all"
           >
-            Start Studying Free <ArrowRight className="w-5 h-5" />
+            Continue with Google <ArrowRight className="w-5 h-5" />
           </button>
           <button 
             onClick={onShowInstall}
@@ -147,7 +147,7 @@ const LandingPage: React.FC<Props> = ({ onStart, onShowPrivacy, onShowTerms, onS
           onClick={onStart}
           className="w-full bg-emerald-600 text-white py-4 rounded-2xl font-bold text-lg shadow-xl shadow-emerald-200 hover:bg-emerald-700 transition-all"
         >
-          Start Studying Free
+          Continue with Google
         </button>
       </section>
 
