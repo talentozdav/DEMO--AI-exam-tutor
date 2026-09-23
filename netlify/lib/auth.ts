@@ -9,8 +9,8 @@ export interface AuthUser {
 const AUTHORIZED_ADMIN_EMAILS = [
   'democustomersupportservices@gmail.com',
   'admin@demoexams.com.ng',
-  'admin@digitalexammentor.ng'
-];
+ 
+]
 
 /**
  * Authoritatively verifies Supabase JWT token from the Authorization header.
