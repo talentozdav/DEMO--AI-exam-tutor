@@ -1,7 +1,87 @@
 [build]
   command = "npm run build"
   publish = "dist"
+  functions = "netlify/functions"
 
+# 1. Health check
+[[redirects]]
+  from = "/api/health"
+  to = "/.netlify/functions/health"
+  status = 200
+
+# 2. Authoritative entitlements
+[[redirects]]
+  from = "/api/getUserEntitlements"
+  to = "/.netlify/functions/getUserEntitlements"
+  status = 200
+
+# 3. Paystack initialize
+[[redirects]]
+  from = "/api/initializePayment"
+  to = "/.netlify/functions/initializePayment"
+  status = 200
+
+# 4. Paystack verify
+[[redirects]]
+  from = "/api/verifyPayment"
+  to = "/.netlify/functions/verifyPayment"
+  status = 200
+
+# 5. Paystack webhook
+[[redirects]]
+  from = "/api/paystackWebhook"
+  to = "/.netlify/functions/paystackWebhook"
+  status = 200
+
+# 6. AI Tutor
+[[redirects]]
+  from = "/api/askAITutor"
+  to = "/.netlify/functions/askAITutor"
+  status = 200
+
+# 7. Generate Practice Questions
+[[redirects]]
+  from = "/api/generateQuestions"
+  to = "/.netlify/functions/generateQuestions"
+  status = 200
+
+# 8. Submit Essay / Theory Grading
+[[redirects]]
+  from = "/api/submitEssay"
+  to = "/.netlify/functions/submitEssay"
+  status = 200
+
+# 9. Smart Study Plan
+[[redirects]]
+  from = "/api/getSmartStudyPlan"
+  to = "/.netlify/functions/getSmartStudyPlan"
+  status = 200
+
+# 10. Redeem Referral Reward
+[[redirects]]
+  from = "/api/redeemReferralReward"
+  to = "/.netlify/functions/redeemReferralReward"
+  status = 200
+
+# 11. Admin Metrics
+[[redirects]]
+  from = "/api/admin/metrics"
+  to = "/.netlify/functions/adminMetrics"
+  status = 200
+
+# 12. Admin Override Subscription
+[[redirects]]
+  from = "/api/admin/overrideSubscription"
+  to = "/.netlify/functions/adminOverrideSubscription"
+  status = 200
+
+# Netlify functions catch-all for any other /api/* routes
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
+
+# SPA fallback: must come AFTER API routing so it never intercepts API calls
 [[redirects]]
   from = "/*"
   to = "/index.html"
