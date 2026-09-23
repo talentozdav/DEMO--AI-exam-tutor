@@ -1,9 +1,26 @@
 
-import React from 'react';
-import { UserProfile, ExamType } from '../types';
+import React, { useState, useEffect } from 'react';
+import { UserProfile, ExamType, StudyStreak } from '../types';
 import { MOCK_STUDY_PLAN } from '../constants';
-import { Calendar, Clock, Target, ArrowRight, Play, Book, BrainCircuit, MessageCircleQuestion, ChevronLeft, Camera, Gift, Share2 } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { recordDailyActivity } from '../utils/streakUtils';
+import StudyStreakCard from './StudyStreakCard';
+import StudyStreakModal from './StudyStreakModal';
+import { 
+  Calendar, 
+  Clock, 
+  Target, 
+  ArrowRight, 
+  Play, 
+  Book, 
+  BrainCircuit, 
+  MessageCircleQuestion, 
+  ChevronLeft, 
+  Camera, 
+  Gift, 
+  Share2,
+  Flame
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface Props {
   profile: UserProfile;
@@ -13,9 +30,37 @@ interface Props {
   onShowContact: () => void;
   onShowReferral?: () => void;
   onShowAdmin?: () => void;
+  onUpdateProfile?: (updatedProfile: UserProfile) => void;
 }
 
-const Dashboard: React.FC<Props> = ({ profile, onNavigate, onStartEssay, onStartCBT, onShowContact, onShowReferral, onShowAdmin }) => {
+const Dashboard: React.FC<Props> = ({ 
+  profile, 
+  onNavigate, 
+  onStartEssay, 
+  onStartCBT, 
+  onShowContact, 
+  onShowReferral, 
+  onShowAdmin,
+  onUpdateProfile
+}) => {
+  const [showStreakModal, setShowStreakModal] = useState(false);
+  
+  // Track and record streak for today
+  const [streak, setStreak] = useState<StudyStreak>(() => {
+    const { streak: calculated } = recordDailyActivity(profile.studyStreak);
+    return calculated;
+  });
+
+  useEffect(() => {
+    const { streak: nextStreak, hasChanged } = recordDailyActivity(profile.studyStreak);
+    setStreak(nextStreak);
+    if (hasChanged && onUpdateProfile) {
+      onUpdateProfile({
+        ...profile,
+        studyStreak: nextStreak,
+      });
+    }
+  }, [profile.studyStreak]);
   
   const calculateDaysLeft = (dateString: string) => {
     if (!dateString) return null;
@@ -55,13 +100,38 @@ const Dashboard: React.FC<Props> = ({ profile, onNavigate, onStartEssay, onStart
       variants={container}
       initial="hidden"
       animate="show"
-      className="p-4 space-y-6"
+      className="p-4 space-y-5"
     >
+      {/* Greeting & Header Streak Flame */}
       <motion.section variants={item} className="space-y-1 relative">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2">
           <h2 className="text-2xl font-black text-slate-900">Hi, {profile.name.split(' ')[0]} 👋</h2>
+          
+          {/* Header Quick Flame Streak Counter */}
+          <button
+            onClick={() => setShowStreakModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-amber-50 to-orange-50 border border-orange-200/90 hover:border-orange-300 rounded-2xl shadow-xs transition-all group cursor-pointer active:scale-95"
+            title="View Study Streak details"
+          >
+            <Flame className="w-4 h-4 text-orange-500 fill-orange-500 animate-pulse group-hover:scale-110 transition-transform" />
+            <span className="text-sm font-black text-slate-800">
+              {streak.currentStreak}
+            </span>
+            <span className="text-[10px] font-extrabold text-orange-600 uppercase tracking-wider">
+              {streak.currentStreak === 1 ? 'day' : 'days'}
+            </span>
+          </button>
         </div>
         <p className="text-slate-500 font-medium">You have {profile.exams.join(' & ')} exams coming up.</p>
+      </motion.section>
+
+      {/* Study Streak Feature Card */}
+      <motion.section variants={item}>
+        <StudyStreakCard
+          streak={streak}
+          onOpenDetails={() => setShowStreakModal(true)}
+          onStartStudy={() => onNavigate('practice')}
+        />
       </motion.section>
 
       {/* Quick Actions */}
@@ -275,6 +345,18 @@ const Dashboard: React.FC<Props> = ({ profile, onNavigate, onStartEssay, onStart
           <ChevronLeft className="w-5 h-5 text-slate-300 rotate-180" />
         </button>
       </motion.section>
+
+      {/* Study Streak Details Modal */}
+      <AnimatePresence>
+        {showStreakModal && (
+          <StudyStreakModal
+            streak={streak}
+            onClose={() => setShowStreakModal(false)}
+            onStartCBT={() => onStartCBT()}
+            onStartTutor={() => onNavigate('tutor')}
+          />
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 };

@@ -2,10 +2,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { UserProfile, Message, ExamType } from '../types';
 import { getTutorResponse } from '../services/geminiService';
+import { recordDailyActivity } from '../utils/streakUtils';
 import { Send, Bot, User, Loader2, Sparkles, ChevronDown, BookOpen, GraduationCap, Info, Image as ImageIcon, X, Lightbulb, HelpCircle, ArrowRight, Bookmark, Maximize2, Quote, CheckCircle } from 'lucide-react';
 
 interface Props {
   profile: UserProfile;
+  onUpdateProfile?: (profile: UserProfile) => void;
 }
 
 interface ImageState {
@@ -84,7 +86,7 @@ const ResponseRenderer: React.FC<{ content: string }> = ({ content }) => {
   );
 };
 
-const AITutor: React.FC<Props> = ({ profile }) => {
+const AITutor: React.FC<Props> = ({ profile, onUpdateProfile }) => {
   const [messages, setMessages] = useState<Message[]>([
     { 
       role: 'assistant', 
@@ -166,6 +168,13 @@ Ask me anything or upload a photo of a diagram or question you're stuck on!`,
       timestamp: Date.now() 
     }]);
     setIsTyping(false);
+
+    if (onUpdateProfile) {
+      const { streak: updatedStreak, hasChanged } = recordDailyActivity(profile.studyStreak);
+      if (hasChanged) {
+        onUpdateProfile({ ...profile, studyStreak: updatedStreak });
+      }
+    }
   };
 
   const handleModeChange = (mode: ExamType) => {

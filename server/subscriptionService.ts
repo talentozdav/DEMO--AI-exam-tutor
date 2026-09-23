@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { adminDb } from './firebaseAdmin';
+import { supabaseAdmin } from './supabaseServer';
 
 export interface Entitlements {
   userId: string;
@@ -17,20 +17,32 @@ const MONTH_MS = 30 * 24 * 60 * 60 * 1000; // 30 days in ms
 const SUBSCRIPTION_AMOUNT_KOBO = 100000; // ₦1,000 in kobo
 
 /**
- * Authoritatively retrieves or initializes user subscription & trial state.
+ * Authoritatively retrieves or initializes user subscription & trial state from Supabase.
  */
-export async function getUserEntitlements(userId: string, email?: string): Promise<Entitlements> {
-  const subRef = adminDb.collection('subscriptions').doc(userId);
-  const subSnap = await subRef.get();
+export async function getUserEntitlements(userId: string, _email?: string): Promise<Entitlements> {
   const now = Date.now();
 
-  if (!subSnap.exists) {
+  const { data: sub, error } = await supabaseAdmin
+    .from('subscriptions')
+    .select('*')
+    .eq('userId', userId)
+    .maybeSingle();
+
+  if (error) {
+    console.error('[SUPABASE] Error reading subscription:', error);
+  }
+
+  if (!sub) {
     // Check if user has an existing user profile to preserve creation time if available
     let trialStart = now;
     try {
-      const userSnap = await adminDb.collection('users').doc(userId).get();
-      if (userSnap.exists && userSnap.data()?.createdAt) {
-        trialStart = userSnap.data()?.createdAt;
+      const { data: userData } = await supabaseAdmin
+        .from('users')
+        .select('"createdAt"')
+        .eq('id', userId)
+        .maybeSingle();
+      if (userData?.createdAt) {
+        trialStart = Number(userData.createdAt);
       }
     } catch (e) {}
 
@@ -49,7 +61,13 @@ export async function getUserEntitlements(userId: string, email?: string): Promi
       updatedAt: now
     };
 
-    await subRef.set(newSubData);
+    const { error: insertErr } = await supabaseAdmin
+      .from('subscriptions')
+      .upsert(newSubData);
+
+    if (insertErr) {
+      console.error('[SUPABASE] Error initializing subscription:', insertErr);
+    }
 
     const remainingMs = Math.max(0, trialExpiresAt - now);
     const daysRemaining = Number((remainingMs / (24 * 60 * 60 * 1000)).toFixed(1));
@@ -66,11 +84,10 @@ export async function getUserEntitlements(userId: string, email?: string): Promi
     };
   }
 
-  const sub = subSnap.data()!;
-  
   // Check active paid subscription
-  if (sub.status === 'active' && sub.expiresAt && sub.expiresAt > now) {
-    const remainingMs = Math.max(0, sub.expiresAt - now);
+  if (sub.status === 'active' && Number(sub.expiresAt) > now) {
+    const expiresAtNum = Number(sub.expiresAt);
+    const remainingMs = Math.max(0, expiresAtNum - now);
     const daysRemaining = Number((remainingMs / (24 * 60 * 60 * 1000)).toFixed(1));
     return {
       userId,
@@ -80,17 +97,20 @@ export async function getUserEntitlements(userId: string, email?: string): Promi
       daysRemaining,
       plan: 'premium',
       status: 'active',
-      expiresAt: sub.expiresAt
+      expiresAt: expiresAtNum
     };
   }
 
   // Check trial
-  const trialExpiresAt = sub.trialExpiresAt || (sub.trialStartedAt ? sub.trialStartedAt + TRIAL_DURATION_MS : now);
-  const isTrialActive = now <= trialExpiresAt;
-  const daysRemaining = Number((Math.max(0, trialExpiresAt - now) / (24 * 60 * 60 * 1000)).toFixed(1));
+  const trialExpiresAtNum = Number(sub.trialExpiresAt) || (Number(sub.trialStartedAt) ? Number(sub.trialStartedAt) + TRIAL_DURATION_MS : now);
+  const isTrialActive = now <= trialExpiresAtNum;
+  const daysRemaining = Number((Math.max(0, trialExpiresAtNum - now) / (24 * 60 * 60 * 1000)).toFixed(1));
 
   if (!isTrialActive && sub.status !== 'expired') {
-    await subRef.update({ status: 'expired', updatedAt: now });
+    await supabaseAdmin
+      .from('subscriptions')
+      .update({ status: 'expired', updatedAt: now })
+      .eq('userId', userId);
   }
 
   return {
@@ -101,7 +121,7 @@ export async function getUserEntitlements(userId: string, email?: string): Promi
     daysRemaining,
     plan: isTrialActive ? 'free_trial' : 'expired',
     status: isTrialActive ? 'trial' : 'expired',
-    expiresAt: trialExpiresAt
+    expiresAt: trialExpiresAtNum
   };
 }
 
@@ -120,25 +140,29 @@ export async function checkAccessOrThrow(userId: string, email?: string): Promis
 }
 
 /**
- * Initializes a payment intent authoritative on the server.
+ * Initializes a payment intent authoritative on the server using Supabase.
  */
 export async function initializePayment(userId: string, email: string) {
   const now = Date.now();
   const rand = Math.random().toString(36).substring(2, 7).toUpperCase();
   const reference = `DEMO_${userId.substring(0, 5)}_${now}_${rand}`;
 
-  // Store pending payment in authoritative Firestore payments collection
-  const paymentDoc = {
-    userId,
+  // Store pending payment in authoritative Supabase payments table
+  const paymentRecord = {
     reference,
+    userId,
     amount: SUBSCRIPTION_AMOUNT_KOBO,
     currency: 'NGN',
     status: 'pending',
     customerEmail: email,
-    createdAt: now
+    createdAt: now,
+    updatedAt: now
   };
 
-  await adminDb.collection('payments').doc(reference).set(paymentDoc);
+  const { error } = await supabaseAdmin.from('payments').insert(paymentRecord);
+  if (error) {
+    console.error('[SUPABASE] Failed to create payment record:', error);
+  }
 
   return {
     reference,
@@ -150,22 +174,23 @@ export async function initializePayment(userId: string, email: string) {
 }
 
 /**
- * Authoritatively verifies a Paystack payment and updates subscription state.
+ * Authoritatively verifies a Paystack payment and updates subscription state in Supabase.
  */
 export async function verifyPayment(reference: string, authenticatedUserId: string) {
-  const paymentRef = adminDb.collection('payments').doc(reference);
-  const paymentSnap = await paymentRef.get();
+  // Check existing payment in Supabase
+  const { data: paymentRecord } = await supabaseAdmin
+    .from('payments')
+    .select('*')
+    .eq('reference', reference)
+    .maybeSingle();
 
   // Check idempotency
-  if (paymentSnap.exists) {
-    const pData = paymentSnap.data();
-    if (pData?.status === 'success') {
-      return {
-        status: 'success',
-        message: 'Payment already verified and active.',
-        reference
-      };
-    }
+  if (paymentRecord?.status === 'success') {
+    return {
+      status: 'success',
+      message: 'Payment already verified and active.',
+      reference
+    };
   }
 
   const secretKey = process.env.PAYSTACK_SECRET_KEY;
@@ -197,8 +222,13 @@ export async function verifyPayment(reference: string, authenticatedUserId: stri
       throw new Error(`Payment verification failed: ${err.message}`);
     }
   } else {
-    // If secret key is not provided in dev/preview environment, verify reference format and complete authoritative transaction
-    console.warn("PAYSTACK_SECRET_KEY not set in environment. Verifying reference format for sandbox simulation.");
+    // In strict production, fail if PAYSTACK_SECRET_KEY is missing
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error("PAYSTACK_SECRET_KEY is required for payment verification in production.");
+    }
+
+    // Development/preview sandbox fallback only
+    console.warn("[DEV ONLY] PAYSTACK_SECRET_KEY not set. Verifying reference format for sandbox simulation.");
     if (reference && reference.startsWith('DEMO_')) {
       verified = true;
       paystackData = {
@@ -221,53 +251,62 @@ export async function verifyPayment(reference: string, authenticatedUserId: stri
   const expiresAt = now + MONTH_MS;
 
   // 1. Authoritatively update payments record
-  await paymentRef.set({
-    userId: authenticatedUserId,
-    reference,
-    amount: SUBSCRIPTION_AMOUNT_KOBO,
-    currency: 'NGN',
-    status: 'success',
-    paidAt: now,
-    paystackResponse: paystackData,
-    updatedAt: now
-  }, { merge: true });
+  await supabaseAdmin
+    .from('payments')
+    .upsert({
+      reference,
+      userId: authenticatedUserId,
+      amount: SUBSCRIPTION_AMOUNT_KOBO,
+      currency: 'NGN',
+      status: 'success',
+      paidAt: now,
+      paystackResponse: paystackData,
+      updatedAt: now
+    });
 
   // 2. Authoritatively update subscriptions record
-  const subRef = adminDb.collection('subscriptions').doc(authenticatedUserId);
-  await subRef.set({
-    userId: authenticatedUserId,
-    status: 'active',
-    plan: 'premium',
-    subscriptionStartedAt: now,
-    expiresAt,
-    amountPaid: 1000,
-    lastPaymentReference: reference,
-    updatedAt: now
-  }, { merge: true });
+  await supabaseAdmin
+    .from('subscriptions')
+    .upsert({
+      userId: authenticatedUserId,
+      status: 'active',
+      plan: 'premium',
+      subscriptionStartedAt: now,
+      expiresAt,
+      amountPaid: 1000,
+      lastPaymentReference: reference,
+      updatedAt: now
+    });
 
   // 3. Sync user profile flags
   try {
-    await adminDb.collection('users').doc(authenticatedUserId).set({
-      isPremium: true,
-      isSubscribed: true,
-      subscription: {
-        plan: 'premium',
-        expiresAt: new Date(expiresAt).toISOString()
-      }
-    }, { merge: true });
+    await supabaseAdmin
+      .from('users')
+      .update({
+        isPremium: true,
+        isSubscribed: true,
+        subscription: {
+          plan: 'premium',
+          expiresAt: new Date(expiresAt).toISOString()
+        },
+        updatedAt: now
+      })
+      .eq('id', authenticatedUserId);
   } catch (e) {
-    console.error("Error updating user document:", e);
+    console.error("[SUPABASE] Error updating user profile flags:", e);
   }
 
-  // 4. Log to audit log
+  // 4. Log to admin audit log
   try {
-    await adminDb.collection('admin_audit_logs').add({
-      adminId: 'system_paystack',
-      action: 'SUBSCRIPTION_ACTIVATED',
-      targetUserId: authenticatedUserId,
-      details: { reference, amount: 1000, expiresAt },
-      timestamp: now
-    });
+    await supabaseAdmin
+      .from('admin_audit_logs')
+      .insert({
+        adminId: 'system_paystack',
+        action: 'SUBSCRIPTION_ACTIVATED',
+        targetUserId: authenticatedUserId,
+        details: { reference, amount: 1000, expiresAt },
+        timestamp: now
+      });
   } catch (e) {}
 
   return {
@@ -291,7 +330,7 @@ export async function handlePaystackWebhook(rawBody: string, signature: string) 
 
   const event = JSON.parse(rawBody);
   if (event.event === 'charge.success' && event.data) {
-    const { reference, metadata, customer } = event.data;
+    const { reference, metadata } = event.data;
     const userId = metadata?.userId || (reference.includes('_') ? reference.split('_')[1] : null);
 
     if (userId) {

@@ -1,22 +1,16 @@
-import { auth } from "../firebase";
+import { getAuthToken } from "../lib/supabaseClient";
 import { ExamType, Question } from "../types";
 
-// Helper to get fresh Firebase Auth token
+// Helper to get fresh Supabase Auth token
 async function getAuthHeader(): Promise<Record<string, string>> {
-  const user = auth.currentUser;
-  if (!user) {
+  const token = await getAuthToken();
+  if (!token) {
     return { 'Content-Type': 'application/json' };
   }
-  try {
-    const token = await user.getIdToken();
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`
-    };
-  } catch (err) {
-    console.error("Failed to acquire ID token:", err);
-    return { 'Content-Type': 'application/json' };
-  }
+  return {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${token}`
+  };
 }
 
 /**

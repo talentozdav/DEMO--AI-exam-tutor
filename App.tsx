@@ -1,7 +1,14 @@
-
 import React, { useState, useEffect } from 'react';
-import { UserProfile, ExamType } from './types';
-import { auth, db, signInWithPopup, googleProvider, onAuthStateChanged, signOut, doc, getDoc, setDoc, onSnapshot, writeBatch, increment, collection, query, orderBy, limit, getDocs, where } from './firebase';
+import { UserProfile } from './types';
+import { supabase, signOut } from './lib/supabaseClient';
+import { 
+  fetchUserProfile, 
+  saveInitialProfile, 
+  updateUserProfile, 
+  fetchLeaderboard, 
+  subscribeToUserProfile 
+} from './services/dbService';
+
 import Dashboard from './components/Dashboard';
 import Onboarding from './components/Onboarding';
 import AITutor from './components/AITutor';
@@ -19,11 +26,29 @@ import Subscription from './components/Subscription';
 import ReferralDashboard from './components/ReferralDashboard';
 import Leaderboard from './components/Leaderboard';
 import AdminPanel from './components/AdminPanel';
-import { Home, BookOpen, MessageSquare, HelpCircle, User, BarChart2, LogOut, X, GraduationCap, Download, Star, ChevronLeft, Share2, Trophy, Gift } from 'lucide-react';
+import AuthModal from './components/AuthModal';
+import TrialBanner from './components/TrialBanner';
+
+import { 
+  Home, 
+  BookOpen, 
+  MessageSquare, 
+  HelpCircle, 
+  User, 
+  BarChart2, 
+  LogOut, 
+  X, 
+  GraduationCap, 
+  Download, 
+  Star, 
+  ChevronLeft, 
+  Share2, 
+  Trophy, 
+  Gift,
+  Flame
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from './lib/utils';
-
-import TrialBanner from './components/TrialBanner';
 
 const App: React.FC = () => {
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -33,6 +58,7 @@ const App: React.FC = () => {
   const [showContact, setShowContact] = useState(false);
   const [showInstall, setShowInstall] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'home' | 'subjects' | 'tutor' | 'practice' | 'progress'>('home');
   const [showEssayCoach, setShowEssayCoach] = useState(false);
   const [showCBT, setShowCBT] = useState(false);
@@ -43,6 +69,8 @@ const App: React.FC = () => {
   const [showAdmin, setShowAdmin] = useState(false);
   const [hasSeenPopup, setHasSeenPopup] = useState(false);
   const [subscriptionState, setSubscriptionState] = useState<any>(null);
+  const [isLoadingAuth, setIsLoadingAuth] = useState(true);
+  const [leaderboardEntries, setLeaderboardEntries] = useState<any[]>([]);
 
   // Listen for backend trial-expired event
   useEffect(() => {
@@ -69,12 +97,11 @@ const App: React.FC = () => {
     if (profile && (profile.activeReferralCount || 0) >= 20 && !profile.isPremium && !profile.referralRewardsClaimed) {
       const claimReward = async () => {
         try {
-          const user = auth.currentUser;
-          if (!user) return;
-          const token = await user.getIdToken();
+          const { data: { session } } = await supabase.auth.getSession();
+          if (!session?.access_token) return;
           const res = await fetch('/api/redeemReferralReward', {
             method: 'POST',
-            headers: { 'Authorization': `Bearer ${token}` }
+            headers: { 'Authorization': `Bearer ${session.access_token}` }
           });
           if (res.ok) {
             alert("Congratulations! You've reached 20 active referrals and unlocked the full WAEC and NECO questions pack for 1 year!");
@@ -86,8 +113,6 @@ const App: React.FC = () => {
       claimReward();
     }
   }, [profile?.activeReferralCount, profile?.isPremium, profile?.referralRewardsClaimed]);
-  const [isLoadingAuth, setIsLoadingAuth] = useState(true);
-  const [leaderboardEntries, setLeaderboardEntries] = useState<any[]>([]);
 
   useEffect(() => {
     // Check for referral code in URL
@@ -100,196 +125,131 @@ const App: React.FC = () => {
     }
   }, []);
 
+  // Supabase Auth Session listener
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        // User is signed in, fetch profile from Firestore
-        const docRef = doc(db, 'users', user.uid);
-        const subRef = doc(db, 'subscriptions', user.uid);
-        
-        // Listen to authoritative subscription status
-        const unsubSub = onSnapshot(subRef, (subSnap) => {
-          if (subSnap.exists()) {
-            setSubscriptionState(subSnap.data());
-          }
-        }, (err) => console.warn('Sub listener error:', err));
+    let unsubProfile: (() => void) | null = null;
 
-        // Fetch entitlements from server
-        try {
-          const token = await user.getIdToken();
+    const handleUser = async (user: any, token?: string) => {
+      if (!user) {
+        setProfile(null);
+        setSubscriptionState(null);
+        setIsStartingOnboarding(false);
+        setIsLoadingAuth(false);
+        if (unsubProfile) unsubProfile();
+        return;
+      }
+
+      // Fetch entitlements from server
+      try {
+        const accessToken = token || (await supabase.auth.getSession()).data.session?.access_token;
+        if (accessToken) {
           const entRes = await fetch('/api/getUserEntitlements', {
-            headers: { 'Authorization': `Bearer ${token}` }
+            headers: { 'Authorization': `Bearer ${accessToken}` }
           });
           if (entRes.ok) {
             const ent = await entRes.json();
             setSubscriptionState(ent);
           }
-        } catch (e) {
-          console.warn('Could not fetch entitlements:', e);
         }
+      } catch (e) {
+        console.warn('Could not fetch entitlements:', e);
+      }
 
-        // Set up real-time listener for the user profile
-        const unsubProfile = onSnapshot(docRef, (docSnap) => {
-          if (docSnap.exists()) {
-            const data = docSnap.data() as UserProfile;
-            setProfile(data);
-            
-            // Show referral popup once if not premium and not seen
-            const hasSeenPopup = localStorage.getItem('examace_referral_popup_seen');
-            if (!data.isPremium && !hasSeenPopup) {
-              setTimeout(() => {
-                setShowReferralPopup(true);
-                localStorage.setItem('examace_referral_popup_seen', 'true');
-              }, 5000);
-            }
-          } else {
-            // New user, needs onboarding
-            setProfile(null);
-            setIsStartingOnboarding(true);
-          }
-          setIsLoadingAuth(false);
-        }, (error) => {
-          console.error("Error fetching profile:", error);
-          setIsLoadingAuth(false);
-        });
-
-        return () => {
-          unsubProfile();
-          unsubSub();
-        };
+      // Fetch user profile from Supabase
+      const userProfile = await fetchUserProfile(user.id);
+      if (userProfile) {
+        setProfile(userProfile);
+        
+        const hasSeenPopup = localStorage.getItem('examace_referral_popup_seen');
+        if (!userProfile.isPremium && !hasSeenPopup) {
+          setTimeout(() => {
+            setShowReferralPopup(true);
+            localStorage.setItem('examace_referral_popup_seen', 'true');
+          }, 5000);
+        }
       } else {
-        // User is signed out
+        // New user, needs onboarding
         setProfile(null);
-        setSubscriptionState(null);
-        setIsStartingOnboarding(false);
+        setIsStartingOnboarding(true);
+      }
+
+      // Realtime subscription to user profile changes
+      if (unsubProfile) unsubProfile();
+      unsubProfile = subscribeToUserProfile(user.id, (updated) => {
+        setProfile(updated);
+      });
+
+      setIsLoadingAuth(false);
+    };
+
+    // Initial session check
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        handleUser(session.user, session.access_token);
+      } else {
         setIsLoadingAuth(false);
       }
     });
 
-    return () => unsubscribe();
+    // Listen to Auth State Changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
+      await handleUser(newSession?.user, newSession?.access_token);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+      if (unsubProfile) unsubProfile();
+    };
   }, []);
 
+  // Fetch leaderboard
   useEffect(() => {
     if (showLeaderboard) {
-      const fetchLeaderboard = async () => {
+      const loadLeaderboard = async () => {
         try {
-          const q = query(collection(db, 'users_public'), orderBy('activeReferralCount', 'desc'), limit(10));
-          const querySnapshot = await getDocs(q);
-          const entries: any[] = [];
-          querySnapshot.forEach((doc) => {
-            const data = doc.data();
-            entries.push({
-              id: doc.id,
-              name: data.name,
-              activeReferrals: data.activeReferralCount || 0,
-              referrals: data.referralCount || 0,
-              isCurrentUser: auth.currentUser?.uid === doc.id
-            });
-          });
-          setLeaderboardEntries(entries);
+          const { data: { user } } = await supabase.auth.getUser();
+          const entries = await fetchLeaderboard(10);
+          setLeaderboardEntries(entries.map((entry: any) => ({
+            id: entry.id,
+            name: entry.name,
+            activeReferrals: entry.activeReferralCount || 0,
+            referrals: entry.referralCount || 0,
+            isCurrentUser: user?.id === entry.id
+          })));
         } catch (error) {
           console.error("Error fetching leaderboard:", error);
         }
       };
-      fetchLeaderboard();
+      loadLeaderboard();
     }
   }, [showLeaderboard]);
 
-  const handleLogin = async () => {
-    try {
-      await signInWithPopup(auth, googleProvider);
-    } catch (error) {
-      console.error("Error signing in:", error);
-      alert("Failed to sign in. Please try again.");
-    }
-  };
-
-  const generateReferralCode = () => {
-    return Math.random().toString(36).substring(2, 8).toUpperCase();
+  const handleLogin = () => {
+    setShowAuthModal(true);
   };
 
   const handleOnboardingComplete = async (newProfile: UserProfile) => {
-    if (!auth.currentUser) return;
-    
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
     const pendingRef = localStorage.getItem('examace_pending_ref');
-    const referralCode = generateReferralCode();
-    
-    const profileWithReferral: UserProfile = { 
-      ...newProfile, 
-      email: auth.currentUser.email || '',
-      referralCode,
-      referredBy: pendingRef || undefined,
-      referralCount: 0,
-      activeReferralCount: 0,
-      referrals: [],
-      scores: [],
-      referralRewardsClaimed: false,
-      createdAt: Date.now()
-    };
-
     try {
-      const batch = writeBatch(db);
-      
-      // 1. Save private profile
-      const userRef = doc(db, 'users', auth.currentUser.uid);
-      batch.set(userRef, profileWithReferral);
-      
-      // 2. Save public profile
-      const publicRef = doc(db, 'users_public', auth.currentUser.uid);
-      batch.set(publicRef, {
-        name: newProfile.name,
-        referralCode,
-        referralCount: 0,
-        activeReferralCount: 0,
-        createdAt: Date.now()
-      });
-
-      // 3. Handle referral tracking if they were referred
-      if (pendingRef) {
-        // Find the referrer by their referral code
-        const q = query(collection(db, 'users_public'), where('referralCode', '==', pendingRef), limit(1));
-        const querySnapshot = await getDocs(q);
-        
-        if (!querySnapshot.empty) {
-          const referrerDoc = querySnapshot.docs[0];
-          const referrerId = referrerDoc.id;
-          
-          // Create tracking document
-          const referralRef = doc(db, 'referrals', auth.currentUser.uid);
-          batch.set(referralRef, {
-            referrerId,
-            status: 'pending',
-            createdAt: Date.now()
-          });
-          
-          // Increment referrer's total count
-          batch.update(referrerDoc.ref, {
-            referralCount: increment(1)
-          });
-          
-          // Also update the referrer's private profile so their dashboard updates
-          const referrerPrivateRef = doc(db, 'users', referrerId);
-          batch.update(referrerPrivateRef, {
-            referralCount: increment(1)
-          });
-        }
-      }
-
-      await batch.commit();
+      const saved = await saveInitialProfile(user.id, user.email || '', newProfile, pendingRef);
+      setProfile(saved);
       localStorage.removeItem('examace_pending_ref');
 
-      // Initialize server-authoritative trial
-      try {
-        const token = await auth.currentUser.getIdToken();
-        const entRes = await fetch('/api/getUserEntitlements', {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (entRes.ok) {
-          const ent = await entRes.json();
-          setSubscriptionState(ent);
-        }
-      } catch (e) {
-        console.warn('Entitlement init warning:', e);
+      // Initialize server-authoritative entitlements
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        try {
+          const entRes = await fetch('/api/getUserEntitlements', {
+            headers: { 'Authorization': `Bearer ${session.access_token}` }
+          });
+          if (entRes.ok) {
+            const ent = await entRes.json();
+            setSubscriptionState(ent);
+          }
+        } catch (e) {}
       }
 
       setIsStartingOnboarding(false);
@@ -300,57 +260,11 @@ const App: React.FC = () => {
   };
 
   const updateProfile = async (updatedProfile: UserProfile) => {
-    if (!auth.currentUser) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
     try {
-      const batch = writeBatch(db);
-      const userRef = doc(db, 'users', auth.currentUser.uid);
-      
-      // Strip managed fields to prevent accidental overwrites from stale state
-      const { 
-        referralCount, 
-        activeReferralCount, 
-        referrals, 
-        referralCode, 
-        referredBy, 
-        isPremium,
-        isSubscribed,
-        subscription,
-        trialStartedAt,
-        role,
-        ...safeUpdate 
-      } = updatedProfile as any;
-      
-      batch.set(userRef, safeUpdate, { merge: true });
-
-      // Check if user just became active (e.g., completed first practice/score)
-      const wasActive = profile?.scores && profile.scores.length > 0;
-      const isNowActive = updatedProfile.scores && updatedProfile.scores.length > 0;
-      
-      if (!wasActive && isNowActive) {
-        // User became active, update referral tracking
-        const referralRef = doc(db, 'referrals', auth.currentUser.uid);
-        const referralSnap = await getDoc(referralRef);
-        
-        if (referralSnap.exists() && referralSnap.data().status === 'pending') {
-          const referrerId = referralSnap.data().referrerId;
-          
-          // Update referral status
-          batch.update(referralRef, { status: 'active' });
-          
-          // Increment referrer's active count
-          const referrerRef = doc(db, 'users_public', referrerId);
-          batch.update(referrerRef, {
-            activeReferralCount: increment(1)
-          });
-          
-          const referrerPrivateRef = doc(db, 'users', referrerId);
-          batch.update(referrerPrivateRef, {
-            activeReferralCount: increment(1)
-          });
-        }
-      }
-
-      await batch.commit();
+      await updateUserProfile(user.id, updatedProfile);
+      setProfile(updatedProfile);
     } catch (error) {
       console.error("Error updating profile:", error);
     }
@@ -369,7 +283,7 @@ const App: React.FC = () => {
     const now = Date.now();
     const trialDuration = 3 * 24 * 60 * 60 * 1000; // 3 days
     const trialExpiresAt = subscriptionState?.trialExpiresAt || 
-      (profile.createdAt ? profile.createdAt + trialDuration : now + trialDuration);
+      (profile.createdAt ? Number(profile.createdAt) + trialDuration : now + trialDuration);
 
     const remaining = trialExpiresAt - now;
     const daysLeft = remaining / (24 * 60 * 60 * 1000);
@@ -384,8 +298,8 @@ const App: React.FC = () => {
 
   const handleReset = async () => {
     if (confirm("This will reset your learning progress and exam dates. Continue?")) {
-      if (profile && auth.currentUser) {
-        const resetProfile = {
+      if (profile) {
+        const resetProfile: UserProfile = {
           ...profile,
           exams: [],
           selectedSubjects: { WAEC: [], NECO: [], JAMB: [] },
@@ -403,7 +317,9 @@ const App: React.FC = () => {
   const handleLogout = async () => {
     if (confirm("Are you sure you want to log out?")) {
       try {
-        await signOut(auth);
+        await signOut();
+        setProfile(null);
+        setSubscriptionState(null);
         setShowProfileModal(false);
         setActiveTab('home');
       } catch (error) {
@@ -428,13 +344,19 @@ const App: React.FC = () => {
 
   if (!profile && !isStartingOnboarding) {
     return (
-      <LandingPage 
-        onStart={handleLogin} 
-        onShowPrivacy={() => setShowPrivacy(true)} 
-        onShowTerms={() => setShowTerms(true)}
-        onShowContact={() => setShowContact(true)}
-        onShowInstall={() => setShowInstall(true)}
-      />
+      <>
+        <LandingPage 
+          onStart={handleLogin} 
+          onShowPrivacy={() => setShowPrivacy(true)} 
+          onShowTerms={() => setShowTerms(true)}
+          onShowContact={() => setShowContact(true)}
+          onShowInstall={() => setShowInstall(true)}
+        />
+        <AuthModal 
+          isOpen={showAuthModal} 
+          onClose={() => setShowAuthModal(false)} 
+        />
+      </>
     );
   }
 
@@ -492,10 +414,11 @@ const App: React.FC = () => {
               onShowContact={() => setShowContact(true)}
               onShowReferral={() => setShowReferralDashboard(true)}
               onShowAdmin={() => setShowAdmin(true)}
+              onUpdateProfile={updateProfile}
             />
           )}
           {activeTab === 'subjects' && <SubjectsList profile={profile!} />}
-          {activeTab === 'tutor' && <AITutor profile={profile!} />}
+          {activeTab === 'tutor' && <AITutor profile={profile!} onUpdateProfile={updateProfile} />}
           {activeTab === 'practice' && <QuestionBank profile={profile!} onStartEssay={() => setShowEssayCoach(true)} onStartCBT={() => setShowCBT(true)} />}
           {activeTab === 'progress' && <ProgressTracker profile={profile!} />}
         </motion.div>
@@ -532,6 +455,20 @@ const App: React.FC = () => {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {profile?.studyStreak && (
+            <button 
+              onClick={() => {
+                setActiveTab('home');
+                setShowEssayCoach(false);
+                setShowCBT(false);
+              }}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 border border-orange-200/80 text-orange-600 text-xs font-black hover:scale-105 active:scale-95 transition-all cursor-pointer"
+              title={`${profile.studyStreak.currentStreak} day study streak`}
+            >
+              <Flame className="w-3.5 h-3.5 fill-orange-500 text-orange-500 animate-pulse" />
+              <span>{profile.studyStreak.currentStreak}</span>
+            </button>
+          )}
           {!profile?.isPremium && !profile?.isSubscribed && (
             <button 
               onClick={() => setShowSubscription(true)}
@@ -613,31 +550,31 @@ const App: React.FC = () => {
               <div className="pt-4 border-t border-slate-100">
                 <button 
                    onClick={() => {setShowInstall(true); setShowProfileModal(false);}}
-                   className="w-full flex items-center gap-3 p-3 text-emerald-600 hover:bg-emerald-50 rounded-2xl transition-colors text-sm font-bold"
+                   className="w-full flex items-center gap-3 p-3 text-emerald-600 hover:bg-emerald-50 rounded-2xl transition-colors text-sm font-bold cursor-pointer"
                 >
                   <Download className="w-4 h-4" /> Install DEMO App
                 </button>
                 <button 
                    onClick={() => {setShowReferralDashboard(true); setShowProfileModal(false);}}
-                   className="w-full flex items-center gap-3 p-3 text-emerald-600 hover:bg-emerald-50 rounded-2xl transition-colors text-sm font-bold mt-2"
+                   className="w-full flex items-center gap-3 p-3 text-emerald-600 hover:bg-emerald-50 rounded-2xl transition-colors text-sm font-bold mt-2 cursor-pointer"
                 >
                   <Share2 className="w-4 h-4" /> Referral Program
                 </button>
                 <button 
                    onClick={() => {setShowLeaderboard(true); setShowProfileModal(false);}}
-                   className="w-full flex items-center gap-3 p-3 text-amber-600 hover:bg-amber-50 rounded-2xl transition-colors text-sm font-bold mt-2"
+                   className="w-full flex items-center gap-3 p-3 text-amber-600 hover:bg-amber-50 rounded-2xl transition-colors text-sm font-bold mt-2 cursor-pointer"
                 >
                   <Trophy className="w-4 h-4" /> Leaderboard
                 </button>
                 <button 
                   onClick={handleLogout}
-                  className="w-full flex items-center gap-3 p-3 text-slate-600 hover:bg-slate-50 rounded-2xl transition-colors text-sm font-bold mt-2"
+                  className="w-full flex items-center gap-3 p-3 text-slate-600 hover:bg-slate-50 rounded-2xl transition-colors text-sm font-bold mt-2 cursor-pointer"
                 >
                   <LogOut className="w-4 h-4" /> Log Out
                 </button>
                 <button 
                   onClick={handleReset}
-                  className="w-full flex items-center gap-3 p-3 text-red-600 hover:bg-red-50 rounded-2xl transition-colors text-sm font-bold mt-2"
+                  className="w-full flex items-center gap-3 p-3 text-red-600 hover:bg-red-50 rounded-2xl transition-colors text-sm font-bold mt-2 cursor-pointer"
                 >
                   <X className="w-4 h-4" /> Reset Learning Progress
                 </button>
@@ -646,6 +583,7 @@ const App: React.FC = () => {
           </div>
         </div>
       )}
+
       {/* Referral Dashboard */}
       <AnimatePresence>
         {showReferralDashboard && profile && (
@@ -705,13 +643,13 @@ const App: React.FC = () => {
                     setShowReferralPopup(false);
                     setShowReferralDashboard(true);
                   }}
-                  className="w-full py-4 bg-emerald-600 text-white font-black rounded-2xl shadow-lg shadow-emerald-200 hover:bg-emerald-700 transition-all active:scale-95"
+                  className="w-full py-4 bg-emerald-600 text-white font-black rounded-2xl shadow-lg shadow-emerald-200 hover:bg-emerald-700 transition-all active:scale-95 cursor-pointer"
                 >
                   START INVITING
                 </button>
                 <button
                   onClick={() => setShowReferralPopup(false)}
-                  className="w-full py-3 text-slate-400 font-bold text-sm hover:text-slate-600 transition-colors"
+                  className="w-full py-3 text-slate-400 font-bold text-sm hover:text-slate-600 transition-colors cursor-pointer"
                 >
                   Maybe Later
                 </button>
@@ -720,12 +658,13 @@ const App: React.FC = () => {
           </div>
         )}
       </AnimatePresence>
+
       {/* Floating Share Button */}
       {profile && !showReferralDashboard && !isStartingOnboarding && (
         <div className="fixed bottom-24 left-1/2 -translate-x-1/2 w-full max-w-md z-40 pointer-events-none flex justify-end px-6">
           <button
             onClick={() => setShowReferralDashboard(true)}
-            className="bg-emerald-600 text-white p-4 rounded-full shadow-2xl shadow-emerald-600/40 hover:bg-emerald-700 hover:scale-105 active:scale-95 transition-all flex items-center justify-center group pointer-events-auto"
+            className="bg-emerald-600 text-white p-4 rounded-full shadow-2xl shadow-emerald-600/40 hover:bg-emerald-700 hover:scale-105 active:scale-95 transition-all flex items-center justify-center group pointer-events-auto cursor-pointer"
             aria-label="Refer a friend"
           >
             <Gift className="w-6 h-6 group-hover:animate-bounce" />
@@ -735,6 +674,12 @@ const App: React.FC = () => {
           </button>
         </div>
       )}
+
+      {/* Auth Modal */}
+      <AuthModal 
+        isOpen={showAuthModal} 
+        onClose={() => setShowAuthModal(false)} 
+      />
     </div>
   );
 };
@@ -743,7 +688,7 @@ const NavButton: React.FC<{ active: boolean; onClick: () => void; icon: React.Re
   <button 
     onClick={onClick}
     className={cn(
-      "relative flex flex-col items-center gap-1 transition-all px-3 py-1 rounded-2xl flex-1",
+      "relative flex flex-col items-center gap-1 transition-all px-3 py-1 rounded-2xl flex-1 cursor-pointer",
       active ? "text-emerald-600" : "text-slate-400 hover:text-slate-600"
     )}
   >

@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { UserProfile, Question } from '../types';
 import { analyzeEssay, generatePracticeQuestions } from '../services/geminiService';
+import { recordDailyActivity } from '../utils/streakUtils';
 import { ChevronLeft, Send, Sparkles, CheckCircle2, AlertCircle, RefreshCw, Lightbulb, TrendingUp, BookOpen, Loader2, ListChecks, Award, Target, Info, ArrowRight, ChevronDown, Flag, Star } from 'lucide-react';
 
 interface Props {
@@ -65,8 +66,11 @@ const EssayCoach: React.FC<Props> = ({ onBack, profile, onUpdateProfile }) => {
       timestamp: Date.now()
     };
 
+    const { streak: updatedStreak } = recordDailyActivity(profile.studyStreak);
+
     const updatedProfile = {
       ...profile,
+      studyStreak: updatedStreak,
       scores: [...(profile.scores || []), newScore]
     };
     onUpdateProfile(updatedProfile);

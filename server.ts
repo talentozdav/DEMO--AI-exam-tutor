@@ -2,7 +2,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import path from 'path';
 import cors from 'cors';
 import { createServer as createViteServer } from 'vite';
-import { verifyUserToken, adminDb, AuthUser } from './server/firebaseAdmin';
+import { verifyUserToken, supabaseAdmin, AuthUser } from './server/supabaseServer';
 import { 
   serverAskAITutor, 
   serverGenerateQuestions, 
@@ -63,7 +63,11 @@ async function startServer() {
 
   // Health check
   app.get('/api/health', (_req, res) => {
-    res.json({ status: 'ok', service: 'DEMO AI Exam Tutor Backend', timestamp: Date.now() });
+    res.json({ 
+      status: 'ok', 
+      service: 'DEMO AI Exam Tutor Supabase Backend', 
+      timestamp: Date.now() 
+    });
   });
 
   // 1. Get User Entitlements (Authoritative trial & subscription state)
@@ -136,16 +140,18 @@ async function startServer() {
         image
       );
 
-      // Log interaction in Firestore ai_interactions
+      // Log interaction in Supabase ai_interactions table
       try {
-        await adminDb.collection('ai_interactions').add({
+        await supabaseAdmin.from('ai_interactions').insert({
           userId: req.user!.uid,
           type: 'tutor',
           subject: subject || 'Mathematics',
           examType: examType || 'WAEC',
           timestamp: Date.now()
         });
-      } catch (e) {}
+      } catch (e) {
+        console.warn('Logging AI interaction warning:', e);
+      }
 
       res.json({ response });
     } catch (err: any) {
@@ -173,16 +179,18 @@ async function startServer() {
         type || 'OBJ'
       );
 
-      // Log interaction
+      // Log interaction in Supabase
       try {
-        await adminDb.collection('ai_interactions').add({
+        await supabaseAdmin.from('ai_interactions').insert({
           userId: req.user!.uid,
           type: 'questions',
           subject: subject || 'Mathematics',
           examType: examType || 'JAMB',
           timestamp: Date.now()
         });
-      } catch (e) {}
+      } catch (e) {
+        console.warn('Logging questions warning:', e);
+      }
 
       res.json({ questions });
     } catch (err: any) {
@@ -206,15 +214,17 @@ async function startServer() {
 
       const feedback = await serverAnalyzeEssay(question, answer, examType || 'WAEC');
 
-      // Log interaction
+      // Log interaction in Supabase
       try {
-        await adminDb.collection('ai_interactions').add({
+        await supabaseAdmin.from('ai_interactions').insert({
           userId: req.user!.uid,
           type: 'essay',
           examType: examType || 'WAEC',
           timestamp: Date.now()
         });
-      } catch (e) {}
+      } catch (e) {
+        console.warn('Logging essay warning:', e);
+      }
 
       res.json({ feedback });
     } catch (err: any) {
@@ -242,19 +252,26 @@ async function startServer() {
   app.post('/api/redeemReferralReward', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
     try {
       const userId = req.user!.uid;
-      const userRef = adminDb.collection('users_public').doc(userId);
-      const userSnap = await userRef.get();
-      const activeCount = userSnap.data()?.activeReferralCount || 0;
+      const { data: userPublic } = await supabaseAdmin
+        .from('users_public')
+        .select('"activeReferralCount"')
+        .eq('id', userId)
+        .maybeSingle();
+
+      const activeCount = userPublic?.activeReferralCount || 0;
 
       if (activeCount < 20) {
-        return res.status(400).json({ error: 'INSUFFICIENT_REFERRALS', message: 'You need at least 20 active referrals.' });
+        return res.status(400).json({ 
+          error: 'INSUFFICIENT_REFERRALS', 
+          message: 'You need at least 20 active referrals.' 
+        });
       }
 
       const now = Date.now();
       const oneYearMs = 365 * 24 * 60 * 60 * 1000;
       const expiresAt = now + oneYearMs;
 
-      await adminDb.collection('subscriptions').doc(userId).set({
+      await supabaseAdmin.from('subscriptions').upsert({
         userId,
         status: 'active',
         plan: 'premium',
@@ -263,13 +280,14 @@ async function startServer() {
         amountPaid: 0,
         lastPaymentReference: 'REFERRAL_20_FRIENDS',
         updatedAt: now
-      }, { merge: true });
+      });
 
-      await adminDb.collection('users').doc(userId).set({
+      await supabaseAdmin.from('users').update({
         isPremium: true,
         isSubscribed: true,
-        referralRewardsClaimed: true
-      }, { merge: true });
+        referralRewardsClaimed: true,
+        updatedAt: now
+      }).eq('id', userId);
 
       res.json({ success: true, message: 'Full WAEC/NECO unlocked for 1 year!' });
     } catch (err: any) {
@@ -281,22 +299,37 @@ async function startServer() {
   // 9. Admin Dashboard Metrics
   app.get('/api/admin/metrics', requireAdmin, async (_req: AuthenticatedRequest, res: Response) => {
     try {
-      const usersSnap = await adminDb.collection('users').get();
-      const subsSnap = await adminDb.collection('subscriptions').where('status', '==', 'active').get();
-      const paymentsSnap = await adminDb.collection('payments').where('status', '==', 'success').get();
-      const aiSnap = await adminDb.collection('ai_interactions').get();
+      const { count: totalUsers } = await supabaseAdmin
+        .from('users')
+        .select('*', { count: 'exact', head: true });
+
+      const { count: activeSubscribers } = await supabaseAdmin
+        .from('subscriptions')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'active');
+
+      const { data: paymentsData, count: successfulPayments } = await supabaseAdmin
+        .from('payments')
+        .select('amount', { count: 'exact' })
+        .eq('status', 'success');
+
+      const { count: totalAIInteractions } = await supabaseAdmin
+        .from('ai_interactions')
+        .select('*', { count: 'exact', head: true });
 
       let totalRevenue = 0;
-      paymentsSnap.forEach(p => {
-        totalRevenue += (p.data().amount || 0) / 100;
-      });
+      if (paymentsData) {
+        paymentsData.forEach(p => {
+          totalRevenue += (Number(p.amount) || 0) / 100;
+        });
+      }
 
       res.json({
-        totalUsers: usersSnap.size,
-        activeSubscribers: subsSnap.size,
-        successfulPayments: paymentsSnap.size,
+        totalUsers: totalUsers || 0,
+        activeSubscribers: activeSubscribers || 0,
+        successfulPayments: successfulPayments || 0,
         totalRevenueNGN: totalRevenue,
-        totalAIInteractions: aiSnap.size
+        totalAIInteractions: totalAIInteractions || 0
       });
     } catch (err: any) {
       console.error('Error in admin metrics:', err);
@@ -315,7 +348,7 @@ async function startServer() {
 
       if (action === 'grant_premium') {
         const expiresAt = now + durationMs;
-        await adminDb.collection('subscriptions').doc(targetUserId).set({
+        await supabaseAdmin.from('subscriptions').upsert({
           userId: targetUserId,
           status: 'active',
           plan: 'premium',
@@ -324,14 +357,15 @@ async function startServer() {
           amountPaid: 0,
           lastPaymentReference: 'ADMIN_OVERRIDE',
           updatedAt: now
-        }, { merge: true });
+        });
 
-        await adminDb.collection('users').doc(targetUserId).set({
+        await supabaseAdmin.from('users').update({
           isPremium: true,
-          isSubscribed: true
-        }, { merge: true });
+          isSubscribed: true,
+          updatedAt: now
+        }).eq('id', targetUserId);
 
-        await adminDb.collection('admin_audit_logs').add({
+        await supabaseAdmin.from('admin_audit_logs').insert({
           adminId: req.user!.uid,
           action: 'ADMIN_GRANT_PREMIUM',
           targetUserId,
@@ -341,19 +375,21 @@ async function startServer() {
 
         return res.json({ success: true, message: 'Premium granted' });
       } else if (action === 'revoke_premium') {
-        await adminDb.collection('subscriptions').doc(targetUserId).set({
+        await supabaseAdmin.from('subscriptions').upsert({
+          userId: targetUserId,
           status: 'expired',
           plan: 'expired',
           expiresAt: now,
           updatedAt: now
-        }, { merge: true });
+        });
 
-        await adminDb.collection('users').doc(targetUserId).set({
+        await supabaseAdmin.from('users').update({
           isPremium: false,
-          isSubscribed: false
-        }, { merge: true });
+          isSubscribed: false,
+          updatedAt: now
+        }).eq('id', targetUserId);
 
-        await adminDb.collection('admin_audit_logs').add({
+        await supabaseAdmin.from('admin_audit_logs').insert({
           adminId: req.user!.uid,
           action: 'ADMIN_REVOKE_PREMIUM',
           targetUserId,
@@ -387,7 +423,7 @@ async function startServer() {
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`DEMO Firebase Backend Server running on http://0.0.0.0:${PORT}`);
+    console.log(`DEMO Supabase Backend Server running on http://0.0.0.0:${PORT}`);
   });
 }
 

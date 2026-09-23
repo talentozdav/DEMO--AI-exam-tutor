@@ -29,6 +29,13 @@ export interface ScoreEntry {
   timestamp: number;
 }
 
+export interface StudyStreak {
+  currentStreak: number;
+  longestStreak: number;
+  lastActiveDate: string;
+  activeDates: string[];
+}
+
 export interface UserProfile {
   name: string;
   email: string;
@@ -40,6 +47,7 @@ export interface UserProfile {
   trialStartedAt?: number;
   isPremium?: boolean;
   scores?: ScoreEntry[];
+  studyStreak?: StudyStreak;
   referralCode?: string;
   referredBy?: string;
   referralCount?: number;

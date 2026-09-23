@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { usePaystackPayment } from 'react-paystack';
 import { UserProfile } from '../types';
-import { auth } from '../firebase';
+import { getAuthToken } from '../lib/supabaseClient';
 import { CheckCircle2, Shield, Zap, ArrowLeft, Star, Loader2, AlertCircle } from 'lucide-react';
 
 interface SubscriptionProps {
@@ -19,7 +19,7 @@ const Subscription: React.FC<SubscriptionProps> = ({ profile, onBack, onSuccess 
     reference: '',
     email: profile.email || 'student@example.com',
     amount: 1000 * 100, // ₦1,000 in kobo
-    publicKey: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY || 'pk_live_8413c9cfb228e0e771818b5dce2ab84472992d5d',
+    publicKey: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY || '',
   });
 
   const initializePaystack = usePaystackPayment(paymentConfig);
@@ -29,8 +29,7 @@ const Subscription: React.FC<SubscriptionProps> = ({ profile, onBack, onSuccess 
     setErrorMsg(null);
 
     try {
-      const user = auth.currentUser;
-      const token = user ? await user.getIdToken() : '';
+      const token = await getAuthToken() || '';
 
       // 1. Authoritative payment initialization via Cloud Function / Backend
       const initRes = await fetch('/api/initializePayment', {
@@ -40,7 +39,7 @@ const Subscription: React.FC<SubscriptionProps> = ({ profile, onBack, onSuccess 
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          email: profile.email || user?.email
+          email: profile.email
         })
       });
 
@@ -55,7 +54,7 @@ const Subscription: React.FC<SubscriptionProps> = ({ profile, onBack, onSuccess 
         reference: serverReference,
         email: initData.email || profile.email,
         amount: initData.amount || 100000,
-        publicKey: initData.publicKey || import.meta.env.VITE_PAYSTACK_PUBLIC_KEY || 'pk_live_8413c9cfb228e0e771818b5dce2ab84472992d5d',
+        publicKey: initData.publicKey || import.meta.env.VITE_PAYSTACK_PUBLIC_KEY || '',
       };
 
       setPaymentConfig(activeConfig);

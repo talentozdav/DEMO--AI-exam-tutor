@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { auth } from '../firebase';
+import { getAuthToken } from '../lib/supabaseClient';
 import { ArrowLeft, Users, CreditCard, Bot, ShieldCheck, RefreshCw, AlertCircle, CheckCircle, Award } from 'lucide-react';
 
 interface Props {
@@ -22,8 +22,7 @@ const AdminPanel: React.FC<Props> = ({ onBack }) => {
     setLoading(true);
     setError(null);
     try {
-      const user = auth.currentUser;
-      const token = user ? await user.getIdToken() : '';
+      const token = await getAuthToken() || '';
       const res = await fetch('/api/admin/metrics', {
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -52,8 +51,7 @@ const AdminPanel: React.FC<Props> = ({ onBack }) => {
     setActionLoading(true);
     setActionSuccess(null);
     try {
-      const user = auth.currentUser;
-      const token = user ? await user.getIdToken() : '';
+      const token = await getAuthToken() || '';
       const res = await fetch('/api/admin/overrideSubscription', {
         method: 'POST',
         headers: {
