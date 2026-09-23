@@ -54,7 +54,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuthSuccess })
         if (!password || password.length < 6) {
           throw new Error('Password must be at least 6 characters long.');
         }
-        await signUpWithEmail(email.trim(), password);
+        await signUpWithEmail(email.trim(), password, name.trim());
         setSuccessMessage('Account created! Please check your email for verification link if enabled, or sign in.');
         onAuthSuccess?.();
         onClose();

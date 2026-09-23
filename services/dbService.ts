@@ -58,9 +58,16 @@ export async function saveInitialProfile(
     localStorage.setItem(`demo_streak_${userId}`, JSON.stringify(initialStreak));
   } catch (e) {}
 
+  const currentUser = (await supabase.auth.getUser()).data.user;
+  const resolvedName = 
+    profileData.name?.trim() || 
+    currentUser?.user_metadata?.full_name || 
+    currentUser?.user_metadata?.name || 
+    'Student';
+
   const userProfile: UserProfile = {
-    name: profileData.name || 'Student',
-    email: userEmail || profileData.email || '',
+    name: resolvedName,
+    email: userEmail || profileData.email || currentUser?.email || '',
     exams: profileData.exams || ['WAEC', 'JAMB'],
     selectedSubjects: profileData.selectedSubjects || { WAEC: [], NECO: [], JAMB: [] },
     examDates: profileData.examDates || { WAEC: '', NECO: '', JAMB: '' },

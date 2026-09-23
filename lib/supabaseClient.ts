@@ -57,9 +57,23 @@ export async function signInWithEmail(email: string, password: string) {
   return data;
 }
 
-export async function signUpWithEmail(email: string, password: string) {
+export async function signUpWithEmail(email: string, password: string, fullName?: string) {
   const { data, error } = await supabase.auth.signUp({
     email,
+    password,
+    options: fullName ? {
+      data: {
+        full_name: fullName.trim(),
+        name: fullName.trim()
+      }
+    } : undefined
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function updateUserPassword(password: string) {
+  const { data, error } = await supabase.auth.updateUser({
     password
   });
   if (error) throw error;
