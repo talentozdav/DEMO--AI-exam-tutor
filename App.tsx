@@ -81,17 +81,6 @@ const App: React.FC = () => {
     return () => window.removeEventListener('trial-expired', handleTrialExpired);
   }, []);
 
-  // Trigger referral popup after login
-  useEffect(() => {
-    if (profile && !hasSeenPopup && activeTab === 'home' && (profile.activeReferralCount || 0) < 20) {
-      const timer = setTimeout(() => {
-        setShowReferralPopup(true);
-        setHasSeenPopup(true);
-      }, 5000);
-      return () => clearTimeout(timer);
-    }
-  }, [profile, hasSeenPopup, activeTab]);
-
   // Grant premium reward for 20 active referrals via server endpoint
   useEffect(() => {
     if (profile && (profile.activeReferralCount || 0) >= 20 && !profile.isPremium && !profile.referralRewardsClaimed) {
@@ -159,14 +148,6 @@ const App: React.FC = () => {
       const userProfile = await fetchUserProfile(user.id);
       if (userProfile) {
         setProfile(userProfile);
-        
-        const hasSeenPopup = localStorage.getItem('examace_referral_popup_seen');
-        if (!userProfile.isPremium && !hasSeenPopup) {
-          setTimeout(() => {
-            setShowReferralPopup(true);
-            localStorage.setItem('examace_referral_popup_seen', 'true');
-          }, 5000);
-        }
       } else {
         // New user, needs onboarding
         setProfile(null);
@@ -427,28 +408,28 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 font-sans text-slate-900 flex flex-col items-center">
+    <div className="min-h-screen bg-slate-50 font-sans text-slate-900 flex flex-col items-center selection:bg-emerald-100 selection:text-emerald-900">
       {/* Header */}
-      <header className="fixed top-0 left-1/2 -translate-x-1/2 w-full max-w-md bg-white/80 backdrop-blur-xl border-b px-4 py-4 flex items-center justify-between z-20 h-16">
+      <header className="fixed top-0 left-1/2 -translate-x-1/2 w-full max-w-4xl bg-white/90 backdrop-blur-xl border-b border-slate-200 px-4 sm:px-6 py-3 flex items-center justify-between z-20 h-16">
         <div className="flex items-center gap-3">
           {(showEssayCoach || showCBT) ? (
             <button 
               onClick={() => {setShowEssayCoach(false); setShowCBT(false);}}
-              className="p-2 -ml-2 hover:bg-slate-100 rounded-full transition-colors"
+              className="p-2 -ml-2 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
             >
               <ChevronLeft className="w-5 h-5 text-slate-600" />
             </button>
           ) : (
-            <div className="w-8 h-8 bg-emerald-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-emerald-200">
+            <div className="w-8 h-8 bg-emerald-600 rounded-xl flex items-center justify-center text-white shadow-md shadow-emerald-200">
               <GraduationCap className="w-5 h-5" />
             </div>
           )}
           <div className="flex flex-col">
-            <h1 className="text-sm font-black text-slate-900 tracking-tighter leading-none">
+            <h1 className="text-sm font-black text-slate-900 tracking-tight leading-none">
               {(showEssayCoach || showCBT) ? getTabTitle() : 'DEMO'}
             </h1>
             {!(showEssayCoach || showCBT) && (
-              <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">
+              <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest mt-0.5">
                 {getTabTitle()}
               </span>
             )}
@@ -462,7 +443,7 @@ const App: React.FC = () => {
                 setShowEssayCoach(false);
                 setShowCBT(false);
               }}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 border border-orange-200/80 text-orange-600 text-xs font-black hover:scale-105 active:scale-95 transition-all cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 border border-orange-200/80 text-orange-700 text-xs font-bold hover:scale-105 active:scale-95 transition-all cursor-pointer"
               title={`${profile.studyStreak.currentStreak} day study streak`}
             >
               <Flame className="w-3.5 h-3.5 fill-orange-500 text-orange-500 animate-pulse" />
@@ -472,44 +453,45 @@ const App: React.FC = () => {
           {!profile?.isPremium && !profile?.isSubscribed && (
             <button 
               onClick={() => setShowSubscription(true)}
-              className="p-1.5 hover:bg-yellow-50 rounded-full transition-colors text-yellow-600"
+              className="p-2 hover:bg-yellow-50 rounded-xl transition-colors text-yellow-600 cursor-pointer"
               title="Upgrade to Premium"
             >
-              <Star className="w-5 h-5" />
+              <Star className="w-4 h-4" />
             </button>
           )}
           <button 
             onClick={() => setShowInstall(true)}
-            className="p-1.5 hover:bg-emerald-50 rounded-full transition-colors text-emerald-600"
+            className="p-2 hover:bg-emerald-50 rounded-xl transition-colors text-emerald-600 cursor-pointer"
             title="Install App"
           >
-            <Download className="w-5 h-5" />
+            <Download className="w-4 h-4" />
           </button>
           <button 
             onClick={() => setShowProfileModal(true)}
-            className="p-1.5 hover:bg-slate-100 rounded-full transition-colors text-slate-500"
+            className="p-2 hover:bg-slate-100 rounded-xl transition-colors text-slate-600 cursor-pointer"
+            title="User Profile"
           >
-            <User className="w-5 h-5" />
+            <User className="w-4 h-4" />
           </button>
         </div>
       </header>
 
       {/* Trial Reminder Banner */}
       {!profile?.isPremium && !profile?.isSubscribed && profile?.trialStartedAt && (
-        <div className="fixed top-16 left-1/2 -translate-x-1/2 w-full max-w-md z-10">
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 w-full max-w-4xl z-10 px-4">
           <TrialBanner daysLeft={trialStatus.daysLeft} onUpgrade={() => setShowSubscription(true)} />
         </div>
       )}
 
       {/* Main Content */}
       <main className={cn(
-        "w-full max-w-md flex-1 pb-24 overflow-y-auto custom-scrollbar bg-slate-50",
+        "w-full max-w-4xl flex-1 pb-24 overflow-y-auto custom-scrollbar bg-slate-50",
         (!profile?.isPremium && !profile?.isSubscribed && profile?.trialStartedAt) ? "pt-32" : "pt-16"
       )}>
         {renderContent()}
       </main>
 
-      <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md bg-white/90 backdrop-blur-xl border-t px-2 py-2 flex justify-around items-center z-20 shadow-[0_-10px_30px_rgba(0,0,0,0.05)]">
+      <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-4xl bg-white/95 backdrop-blur-xl border-t border-slate-200 px-2 py-2 flex justify-around items-center z-20 shadow-xs">
         <NavButton active={activeTab === 'home' && !showEssayCoach && !showCBT} onClick={() => {setActiveTab('home'); setShowEssayCoach(false); setShowCBT(false);}} icon={<Home className="w-5 h-5" />} label="Home" />
         <NavButton active={activeTab === 'subjects'} onClick={() => {setActiveTab('subjects'); setShowEssayCoach(false); setShowCBT(false);}} icon={<BookOpen className="w-5 h-5" />} label="Study" />
         <NavButton active={activeTab === 'tutor'} onClick={() => {setActiveTab('tutor'); setShowEssayCoach(false); setShowCBT(false);}} icon={<MessageSquare className="w-5 h-5" />} label="AI Tutor" />
@@ -658,22 +640,6 @@ const App: React.FC = () => {
           </div>
         )}
       </AnimatePresence>
-
-      {/* Floating Share Button */}
-      {profile && !showReferralDashboard && !isStartingOnboarding && (
-        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 w-full max-w-md z-40 pointer-events-none flex justify-end px-6">
-          <button
-            onClick={() => setShowReferralDashboard(true)}
-            className="bg-emerald-600 text-white p-4 rounded-full shadow-2xl shadow-emerald-600/40 hover:bg-emerald-700 hover:scale-105 active:scale-95 transition-all flex items-center justify-center group pointer-events-auto cursor-pointer"
-            aria-label="Refer a friend"
-          >
-            <Gift className="w-6 h-6 group-hover:animate-bounce" />
-            <span className="absolute right-full mr-4 bg-slate-900 text-white text-xs font-bold py-1.5 px-3 rounded-xl whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-              Invite & Earn
-            </span>
-          </button>
-        </div>
-      )}
 
       {/* Auth Modal */}
       <AuthModal 

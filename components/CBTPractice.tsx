@@ -1,11 +1,26 @@
-
 import React, { useState, useEffect } from 'react';
 import { UserProfile, Question } from '../types';
 import { MOCK_QUESTIONS } from '../constants';
 import { generatePracticeQuestions } from '../services/geminiService';
 import { supabase } from '../lib/supabaseClient';
 import { recordDailyActivity } from '../utils/streakUtils';
-import { ChevronLeft, ChevronRight, Timer, Flag, CheckCircle, Info, Sparkles, Zap, Loader2, Target, Clock, Trophy, ArrowRight, XCircle } from 'lucide-react';
+import { 
+  ChevronLeft, 
+  ChevronRight, 
+  Timer, 
+  Flag, 
+  CheckCircle2, 
+  Sparkles, 
+  Zap, 
+  Loader2, 
+  Target, 
+  Clock, 
+  Trophy, 
+  ArrowRight, 
+  XCircle,
+  RotateCcw,
+  BookOpen
+} from 'lucide-react';
 
 interface Props {
   onBack: () => void;
@@ -23,27 +38,42 @@ const CBTPractice: React.FC<Props> = ({ onBack, profile, onUpdateProfile }) => {
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [isFinished, setIsFinished] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [reviewOnlyMistakes, setReviewOnlyMistakes] = useState(false);
 
   const startSession = async (selectedMode: SessionMode) => {
     setMode(selectedMode);
     setIsGenerating(true);
+    setAnswers({});
+    setCurrentIdx(0);
+    setIsFinished(false);
+    setReviewOnlyMistakes(false);
     
-    const subject = profile.selectedSubjects.JAMB[0] || 'Mathematics';
+    const subject = profile.selectedSubjects.JAMB?.[0] || 'Mathematics';
     const isEnglish = subject.toLowerCase().includes('english');
     
     let count = 10;
     let time = 600;
 
-    if (selectedMode === 'DRILL') count = 10, time = 600;
-    else if (selectedMode === 'FOCUS') count = 20, time = 1500;
-    else if (selectedMode === 'FULL') count = isEnglish ? 60 : 40, time = isEnglish ? 3600 : 2700;
+    if (selectedMode === 'DRILL') {
+      count = 10;
+      time = 600;
+    } else if (selectedMode === 'FOCUS') {
+      count = 20;
+      time = 1500;
+    } else if (selectedMode === 'FULL') {
+      count = isEnglish ? 60 : 40;
+      time = isEnglish ? 3600 : 2700;
+    }
 
     setTimeLeft(time);
 
     try {
       const generated = await generatePracticeQuestions(count, 'JAMB', subject);
-      if (generated && generated.length > 0) setQuestions(generated);
-      else setQuestions(MOCK_QUESTIONS.filter(q => q.examType === 'JAMB').slice(0, count));
+      if (generated && generated.length > 0) {
+        setQuestions(generated);
+      } else {
+        setQuestions(MOCK_QUESTIONS.filter(q => q.examType === 'JAMB').slice(0, count));
+      }
     } catch (error) {
       setQuestions(MOCK_QUESTIONS.filter(q => q.examType === 'JAMB').slice(0, count));
     }
@@ -67,9 +97,16 @@ const CBTPractice: React.FC<Props> = ({ onBack, profile, onUpdateProfile }) => {
   };
 
   const handleFinish = async () => {
-    if (confirm("Are you sure you want to submit your CBT mock?")) {
+    const answeredCount = Object.keys(answers).length;
+    const unanswered = questions.length - answeredCount;
+    
+    const promptMessage = unanswered > 0 
+      ? `You have ${unanswered} unanswered questions. Are you sure you want to submit?`
+      : "Are you sure you want to submit your CBT mock session?";
+
+    if (confirm(promptMessage)) {
       const score = questions.reduce((acc, q) => acc + (answers[q.id] === q.correctAnswer ? 1 : 0), 0);
-      const subject = profile.selectedSubjects.JAMB[0] || 'Mathematics';
+      const subject = profile.selectedSubjects.JAMB?.[0] || 'Mathematics';
       const now = Date.now();
       
       const newScore = {
@@ -90,7 +127,7 @@ const CBTPractice: React.FC<Props> = ({ onBack, profile, onUpdateProfile }) => {
 
       onUpdateProfile(updatedProfile);
 
-      // Record authoritative exam session in Supabase
+      // Record exam session in database
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
@@ -111,171 +148,345 @@ const CBTPractice: React.FC<Props> = ({ onBack, profile, onUpdateProfile }) => {
     }
   };
 
+  // Pre-session selector
   if (!mode) {
+    const activeSubject = profile.selectedSubjects.JAMB?.[0] || 'Mathematics';
     return (
-      <div className="p-6 space-y-8 animate-in fade-in duration-500 max-w-md mx-auto h-full flex flex-col justify-center">
-        <div className="text-center space-y-2 mb-4">
-           <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-3xl flex items-center justify-center mx-auto mb-4">
-              <Zap className="w-8 h-8" />
-           </div>
-           <h2 className="text-3xl font-black text-slate-900">MOCK SESSION</h2>
-           <p className="text-slate-500 font-medium">Test your readiness with timed exam sets.</p>
+      <div className="p-4 sm:p-6 max-w-xl mx-auto min-h-[calc(100vh-140px)] flex flex-col justify-center space-y-6">
+        <div className="text-center space-y-2">
+          <div className="w-12 h-12 bg-emerald-100 text-emerald-700 rounded-2xl flex items-center justify-center mx-auto mb-2">
+            <Target className="w-6 h-6" />
+          </div>
+          <h2 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+            JAMB CBT Practice
+          </h2>
+          <p className="text-xs sm:text-sm text-slate-500 font-medium">
+            Simulate realistic UTME test conditions for <strong className="text-slate-700 font-semibold">{activeSubject}</strong>.
+          </p>
         </div>
 
-        <div className="space-y-4">
-          <SessionOption icon={<Clock className="text-blue-500" />} title="Quick Drill" desc="10 Questions • 10 Minutes" onClick={() => startSession('DRILL')} />
-          <SessionOption icon={<Target className="text-emerald-500" />} title="Focus Practice" desc="20 Questions • 25 Minutes" onClick={() => startSession('FOCUS')} />
-          <SessionOption icon={<Trophy className="text-amber-500" />} title="Full AI Mock" desc={`${profile.selectedSubjects.JAMB[0]?.includes('English') ? '60' : '40'} Questions • Official Timings`} onClick={() => startSession('FULL')} />
+        <div className="space-y-3">
+          <SessionOption 
+            icon={<Clock className="text-emerald-600" />} 
+            title="Quick Drill" 
+            desc="10 Questions • 10 Minutes" 
+            badge="Fast Practice"
+            onClick={() => startSession('DRILL')} 
+          />
+          <SessionOption 
+            icon={<Target className="text-teal-600" />} 
+            title="Focus Practice" 
+            desc="20 Questions • 25 Minutes" 
+            badge="Standard"
+            onClick={() => startSession('FOCUS')} 
+          />
+          <SessionOption 
+            icon={<Trophy className="text-amber-600" />} 
+            title="Full UTME Simulation" 
+            desc={`${activeSubject.toLowerCase().includes('english') ? '60' : '40'} Questions • Official Timings`} 
+            badge="Full Length"
+            onClick={() => startSession('FULL')} 
+          />
         </div>
 
-        <button onClick={onBack} className="w-full py-4 text-slate-400 font-black text-[10px] uppercase tracking-widest hover:text-slate-600">Cancel & Exit</button>
+        <button 
+          onClick={onBack} 
+          className="w-full py-3 text-slate-500 font-bold text-xs uppercase tracking-wider hover:text-slate-800 transition-colors cursor-pointer"
+        >
+          Return to Dashboard
+        </button>
       </div>
     );
   }
 
+  // Loading state
   if (isGenerating) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen bg-white p-6 text-center space-y-6">
-        <Loader2 className="w-12 h-12 text-emerald-600 animate-spin" />
-        <div className="space-y-2">
-          <h2 className="text-2xl font-black text-slate-900 uppercase">Preparing Lab</h2>
-          <p className="text-slate-400 font-medium">Generating unique practice questions...</p>
+      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-140px)] p-6 text-center space-y-4">
+        <Loader2 className="w-10 h-10 text-emerald-600 animate-spin" />
+        <div className="space-y-1">
+          <h3 className="text-lg font-bold text-slate-900">Preparing Your CBT Exam</h3>
+          <p className="text-xs text-slate-500">Retrieving syllabus questions and verifying answer keys...</p>
         </div>
       </div>
     );
   }
 
+  // Results Screen with structured post-exam learning loop
   if (isFinished) {
     const score = questions.reduce((acc, q) => acc + (answers[q.id] === q.correctAnswer ? 1 : 0), 0);
-    const timeSpent = (mode === 'DRILL' ? 600 : mode === 'FOCUS' ? 1500 : 3600) - timeLeft;
+    const totalDuration = mode === 'DRILL' ? 600 : mode === 'FOCUS' ? 1500 : 3600;
+    const timeSpent = totalDuration - timeLeft;
     const avgSpeed = questions.length > 0 ? Math.round(timeSpent / questions.length) : 0;
+    const accuracyPercent = Math.round((score / questions.length) * 100);
+
+    const questionsToReview = reviewOnlyMistakes 
+      ? questions.filter(q => answers[q.id] !== q.correctAnswer)
+      : questions;
 
     return (
-      <div className="p-4 space-y-8 animate-in zoom-in-95 duration-500 max-w-md mx-auto pb-20">
-        <div className="bg-white p-8 rounded-[48px] border border-slate-100 shadow-2xl text-center space-y-4 relative overflow-hidden">
-           <div className="absolute top-0 left-0 w-full h-1.5 bg-emerald-500"></div>
-           <div className="w-24 h-24 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4 border-4 border-emerald-100">
-              <Trophy className="w-10 h-10" />
-           </div>
-           <h2 className="text-4xl font-black text-slate-900">{score} / {questions.length}</h2>
-           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Mock Final Result</p>
+      <div className="p-4 sm:p-6 space-y-6 max-w-2xl mx-auto pb-16">
+        {/* Score Card */}
+        <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs text-center space-y-3">
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+            Session Completed
+          </span>
+          <div className="flex items-center justify-center gap-3">
+            <span className="text-4xl sm:text-5xl font-black text-slate-900 tracking-tight">
+              {score} <span className="text-xl sm:text-2xl text-slate-400 font-semibold">/ {questions.length}</span>
+            </span>
+          </div>
+          <p className="text-xs font-bold text-emerald-700">
+            {accuracyPercent}% Accuracy
+          </p>
         </div>
         
-        <div className="grid grid-cols-2 gap-3">
-          <StatCard label="Time Used" value={formatTime(timeSpent)} icon={<Clock size={12}/>} />
-          <StatCard label="Avg Pace" value={`${avgSpeed}s / q`} icon={<Zap size={12}/>} color="text-emerald-600" />
+        {/* Performance Metrics */}
+        <div className="grid grid-cols-3 gap-2 sm:gap-3">
+          <div className="bg-white p-3 sm:p-4 rounded-xl border border-slate-200 text-center">
+            <span className="text-[10px] font-bold text-slate-400 uppercase">Time Used</span>
+            <p className="text-sm sm:text-base font-black text-slate-800 mt-1">{formatTime(timeSpent)}</p>
+          </div>
+          <div className="bg-white p-3 sm:p-4 rounded-xl border border-slate-200 text-center">
+            <span className="text-[10px] font-bold text-slate-400 uppercase">Avg Speed</span>
+            <p className="text-sm sm:text-base font-black text-slate-800 mt-1">{avgSpeed}s / question</p>
+          </div>
+          <div className="bg-white p-3 sm:p-4 rounded-xl border border-slate-200 text-center">
+            <span className="text-[10px] font-bold text-slate-400 uppercase">Missed</span>
+            <p className="text-sm sm:text-base font-black text-red-600 mt-1">{questions.length - score}</p>
+          </div>
         </div>
 
-        <div className="space-y-6">
-          <h3 className="font-black text-slate-900 px-1 uppercase text-xs tracking-widest flex items-center gap-2">
-            <Target size={14} className="text-emerald-500" /> Correction & Insights
-          </h3>
-          {questions.map((q, i) => (
-            <div key={q.id} className="bg-white rounded-[32px] border border-slate-100 overflow-hidden shadow-md">
-              <div className={`px-5 py-3 flex items-center justify-between ${answers[q.id] === q.correctAnswer ? 'bg-emerald-50/50' : 'bg-red-50/50'}`}>
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Q{i + 1}</span>
-                <div className="flex items-center gap-2">
-                   {answers[q.id] === q.correctAnswer ? <CheckCircle className="w-4 h-4 text-emerald-600" /> : <XCircle className="w-4 h-4 text-red-500" />}
-                   <span className={`text-[10px] font-black uppercase ${answers[q.id] === q.correctAnswer ? 'text-emerald-600' : 'text-red-500'}`}>
-                     {answers[q.id] === q.correctAnswer ? 'Accurate' : 'Missed'}
-                   </span>
-                </div>
-              </div>
-              <div className="p-6 space-y-4">
-                <p className="text-sm font-bold text-slate-800 leading-relaxed">{q.text}</p>
-                <div className="flex flex-wrap gap-2">
-                   {q.options?.map((opt, idx) => (
-                      <div key={idx} className={`px-3 py-1 rounded-lg text-[10px] font-bold border ${opt === q.correctAnswer ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : opt === answers[q.id] ? 'bg-red-50 border-red-200 text-red-700' : 'bg-slate-50 border-slate-100 text-slate-400'}`}>
-                        {String.fromCharCode(65+idx)}. {opt}
-                      </div>
-                   ))}
-                </div>
-                
-                {/* Logic Lab Explainer */}
-                <div className="bg-emerald-900 p-5 rounded-2xl text-white space-y-3 relative overflow-hidden group">
-                  <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:scale-110 transition-transform"><Sparkles size={40} /></div>
-                  <div className="flex items-center gap-2 border-b border-white/10 pb-2 mb-1">
-                    <Info className="w-4 h-4 text-emerald-400" />
-                    <span className="text-[9px] font-black uppercase tracking-widest">Logic Breakdown</span>
-                  </div>
-                  <p className="text-[13px] leading-relaxed text-emerald-50 font-medium">
-                    {q.explanation}
-                  </p>
-                </div>
-              </div>
-            </div>
-          ))}
+        {/* Action Loop Buttons */}
+        <div className="flex flex-col sm:flex-row gap-2.5">
+          <button 
+            onClick={() => setReviewOnlyMistakes(!reviewOnlyMistakes)}
+            className="flex-1 py-3 px-4 rounded-xl font-bold text-xs sm:text-sm bg-white border border-slate-200 text-slate-800 hover:bg-slate-50 transition-colors text-center cursor-pointer"
+          >
+            {reviewOnlyMistakes ? "Show All Questions" : `Review Missed Only (${questions.length - score})`}
+          </button>
+          <button 
+            onClick={() => setMode(null)}
+            className="flex-1 py-3 px-4 rounded-xl font-bold text-xs sm:text-sm bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-all text-center cursor-pointer flex items-center justify-center gap-2"
+          >
+            <RotateCcw className="w-4 h-4" /> Try Another Session
+          </button>
         </div>
-        <button onClick={onBack} className="w-full bg-slate-900 text-white py-5 rounded-3xl font-black text-sm uppercase tracking-widest shadow-xl shadow-slate-200 hover:scale-[1.02] active:scale-95 transition-all">Done Reviewing</button>
+
+        {/* Detailed Correction & Explanations */}
+        <div className="space-y-4 pt-2">
+          <div className="flex items-center justify-between px-1">
+            <h3 className="font-bold text-slate-900 text-xs sm:text-sm uppercase tracking-wider flex items-center gap-2">
+              <BookOpen className="w-4 h-4 text-emerald-600" />
+              Detailed Explanations ({questionsToReview.length})
+            </h3>
+          </div>
+
+          {questionsToReview.map((q, i) => {
+            const isCorrect = answers[q.id] === q.correctAnswer;
+            return (
+              <div key={q.id} className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
+                <div className={`px-4 py-2.5 flex items-center justify-between border-b ${
+                  isCorrect ? 'bg-emerald-50/60 border-emerald-100' : 'bg-red-50/60 border-red-100'
+                }`}>
+                  <span className="text-xs font-bold text-slate-600">Question {questions.indexOf(q) + 1}</span>
+                  <span className={`text-xs font-bold flex items-center gap-1.5 ${
+                    isCorrect ? 'text-emerald-700' : 'text-red-600'
+                  }`}>
+                    {isCorrect ? <CheckCircle2 size={14} /> : <XCircle size={14} />}
+                    {isCorrect ? 'Correct' : 'Missed'}
+                  </span>
+                </div>
+
+                <div className="p-4 sm:p-5 space-y-3">
+                  <p className="text-xs sm:text-sm font-medium text-slate-900 leading-relaxed">{q.text}</p>
+                  
+                  {/* Options List */}
+                  <div className="space-y-1.5 pt-1">
+                    {q.options?.map((opt, idx) => {
+                      const isOptionCorrect = opt === q.correctAnswer;
+                      const isOptionSelected = opt === answers[q.id];
+
+                      let style = "border-slate-200 bg-slate-50 text-slate-600";
+                      if (isOptionCorrect) {
+                        style = "border-emerald-300 bg-emerald-50 text-emerald-900 font-semibold";
+                      } else if (isOptionSelected && !isOptionCorrect) {
+                        style = "border-red-300 bg-red-50 text-red-900 font-semibold";
+                      }
+
+                      return (
+                        <div key={idx} className={`px-3 py-2 rounded-lg text-xs border flex items-center justify-between ${style}`}>
+                          <span>{String.fromCharCode(65 + idx)}. {opt}</span>
+                          {isOptionCorrect && <span className="text-[10px] font-bold text-emerald-700 uppercase">Correct Answer</span>}
+                          {isOptionSelected && !isOptionCorrect && <span className="text-[10px] font-bold text-red-600 uppercase">Your Choice</span>}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Marking Explanation */}
+                  {q.explanation && (
+                    <div className="bg-slate-50 border border-slate-200/80 p-3.5 rounded-xl text-xs space-y-1">
+                      <span className="font-bold text-slate-700 uppercase text-[10px] tracking-wider block">
+                        Marking Explanation
+                      </span>
+                      <p className="text-slate-600 leading-relaxed">{q.explanation}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <button 
+          onClick={onBack} 
+          className="w-full py-3.5 rounded-xl font-bold text-xs uppercase tracking-wider bg-slate-900 text-white hover:bg-slate-800 transition-all cursor-pointer"
+        >
+          Return to Dashboard
+        </button>
       </div>
     );
   }
 
+  // Active Exam Interface (Distraction-Free)
   const currentQ = questions[currentIdx];
 
   return (
-    <div className="flex flex-col h-screen bg-white max-w-md mx-auto relative overflow-hidden">
-      <div className="bg-emerald-600 p-4 pt-6 text-white flex items-center justify-between shadow-lg z-10">
+    <div className="flex flex-col h-[calc(100vh-140px)] bg-white max-w-2xl mx-auto w-full relative">
+      {/* Top Exam Header: High-contrast timer & status */}
+      <div className="bg-slate-900 text-white px-4 py-3 flex items-center justify-between z-10 shrink-0">
+        <div>
+          <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">JAMB CBT Simulation</span>
+          <p className="text-xs sm:text-sm font-bold truncate max-w-[180px] sm:max-w-[280px]">
+            {profile.selectedSubjects.JAMB?.[0] || 'Mathematics'}
+          </p>
+        </div>
+
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-white/20 rounded-2xl flex items-center justify-center font-black">J</div>
-          <div>
-            <h2 className="font-black text-[10px] uppercase tracking-widest opacity-80">JAMB CBT</h2>
-            <p className="text-sm font-black uppercase tracking-tight">{profile.selectedSubjects.JAMB[0]}</p>
+          {/* Timer */}
+          <div className="bg-slate-800 border border-slate-700 px-3 py-1.5 rounded-lg flex items-center gap-2">
+            <Timer size={14} className={timeLeft <= 180 ? "text-amber-400 animate-pulse" : "text-emerald-400"} />
+            <span className={`font-mono font-bold text-sm sm:text-base ${timeLeft <= 180 ? "text-amber-400" : "text-white"}`}>
+              {formatTime(timeLeft)}
+            </span>
           </div>
-        </div>
-        <div className="bg-emerald-900/40 px-4 py-2 rounded-2xl border border-white/20 flex items-center gap-2">
-          <Timer size={16} />
-          <span className="font-mono font-black text-lg leading-none">{formatTime(timeLeft)}</span>
+
+          <button 
+            onClick={handleFinish}
+            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer"
+          >
+            Submit
+          </button>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6 space-y-8 z-0">
-        <div className="flex items-center justify-between">
-          <span className="px-3 py-1.5 bg-slate-100 text-slate-500 rounded-xl text-[10px] font-black uppercase tracking-widest">Question {currentIdx + 1} of {questions.length}</span>
-          <Flag className="w-4 h-4 text-slate-200" />
+      {/* Main Question Body */}
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5">
+        <div className="flex items-center justify-between text-xs text-slate-500 font-semibold">
+          <span>Question {currentIdx + 1} of {questions.length}</span>
+          <span className="text-[11px] bg-slate-100 px-2 py-0.5 rounded text-slate-600">
+            {answers[currentQ?.id] ? 'Answered' : 'Not Answered'}
+          </span>
         </div>
-        <h3 className="text-2xl font-black text-slate-900 leading-tight">{currentQ?.text}</h3>
-        <div className="space-y-3 pt-4">
-          {currentQ?.options?.map((opt, i) => (
-            <button key={i} onClick={() => setAnswers({...answers, [currentQ.id]: opt})} className={`w-full p-5 rounded-[28px] border-2 text-left transition-all flex items-center gap-5 active:scale-[0.98] ${answers[currentQ.id] === opt ? 'border-emerald-600 bg-emerald-50 shadow-md' : 'border-slate-100 bg-slate-50 hover:border-slate-300'}`}>
-              <div className={`w-10 h-10 rounded-xl border-2 flex items-center justify-center font-black text-sm shrink-0 transition-all ${answers[currentQ.id] === opt ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-300 border-slate-200'}`}>{String.fromCharCode(65 + i)}</div>
-              <span className={`font-black text-[15px] ${answers[currentQ.id] === opt ? 'text-emerald-900' : 'text-slate-600'}`}>{opt}</span>
-            </button>
-          ))}
+
+        <h3 className="text-base sm:text-lg font-bold text-slate-900 leading-snug">
+          {currentQ?.text}
+        </h3>
+
+        {/* Answer Choices */}
+        <div className="space-y-2.5 pt-2">
+          {currentQ?.options?.map((opt, i) => {
+            const isSelected = answers[currentQ.id] === opt;
+            return (
+              <button 
+                key={i} 
+                onClick={() => setAnswers({...answers, [currentQ.id]: opt})} 
+                className={`w-full p-3.5 sm:p-4 rounded-xl border text-left transition-all flex items-center gap-3.5 cursor-pointer active:scale-[0.99] ${
+                  isSelected 
+                    ? 'border-emerald-600 bg-emerald-50 text-slate-900 font-semibold ring-1 ring-emerald-600' 
+                    : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700'
+                }`}
+              >
+                <div className={`w-7 h-7 rounded-lg border flex items-center justify-center font-bold text-xs shrink-0 ${
+                  isSelected 
+                    ? 'bg-emerald-600 text-white border-emerald-600' 
+                    : 'bg-slate-100 text-slate-600 border-slate-300'
+                }`}>
+                  {String.fromCharCode(65 + i)}
+                </div>
+                <span className="text-xs sm:text-sm flex-1">{opt}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      <div className="p-4 bg-white border-t border-slate-100 grid grid-cols-2 gap-3 pb-8 shadow-sm">
-        <button disabled={currentIdx === 0} onClick={() => setCurrentIdx(currentIdx - 1)} className="py-5 border-2 border-slate-100 rounded-3xl font-black text-[10px] text-slate-400 uppercase tracking-widest disabled:opacity-20 transition-all">Prev</button>
-        <button onClick={() => currentIdx === questions.length - 1 ? handleFinish() : setCurrentIdx(currentIdx + 1)} className="py-5 bg-emerald-600 text-white rounded-3xl font-black text-[10px] uppercase tracking-widest shadow-xl shadow-emerald-100 active:scale-95 transition-all">{currentIdx === questions.length - 1 ? 'Finish' : 'Next Question'}</button>
-      </div>
-
-      <div className="px-4 py-3 bg-slate-50 flex gap-2 overflow-x-auto border-t border-slate-100 custom-scrollbar">
+      {/* Question Palette / Navigation Grid */}
+      <div className="px-4 py-2 bg-slate-50 border-t border-slate-200 flex gap-1.5 overflow-x-auto shrink-0">
         {questions.map((q, i) => (
-          <button key={q.id} onClick={() => setCurrentIdx(i)} className={`min-w-[40px] h-10 rounded-xl text-[10px] font-black border-2 transition-all flex-shrink-0 flex items-center justify-center ${currentIdx === i ? 'bg-emerald-600 text-white border-emerald-600 shadow-md scale-110' : answers[q.id] ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-white text-slate-300 border-slate-100'}`}>{i + 1}</button>
+          <button 
+            key={q.id} 
+            onClick={() => setCurrentIdx(i)} 
+            className={`min-w-[32px] h-8 rounded-lg text-xs font-bold border transition-all shrink-0 flex items-center justify-center cursor-pointer ${
+              currentIdx === i 
+                ? 'bg-slate-900 text-white border-slate-900' 
+                : answers[q.id] 
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-300 font-bold' 
+                  : 'bg-white text-slate-500 border-slate-200'
+            }`}
+          >
+            {i + 1}
+          </button>
         ))}
+      </div>
+
+      {/* Footer Navigation Bar */}
+      <div className="p-3 bg-white border-t border-slate-200 grid grid-cols-2 gap-3 shrink-0">
+        <button 
+          disabled={currentIdx === 0} 
+          onClick={() => setCurrentIdx(currentIdx - 1)} 
+          className="py-2.5 border border-slate-200 rounded-xl font-bold text-xs text-slate-700 uppercase tracking-wider disabled:opacity-30 transition-all cursor-pointer"
+        >
+          Previous
+        </button>
+        <button 
+          onClick={() => currentIdx === questions.length - 1 ? handleFinish() : setCurrentIdx(currentIdx + 1)} 
+          className="py-2.5 bg-emerald-600 text-white rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-emerald-700 active:scale-95 transition-all cursor-pointer"
+        >
+          {currentIdx === questions.length - 1 ? 'Finish Exam' : 'Next Question'}
+        </button>
       </div>
     </div>
   );
 };
 
-const StatCard = ({ label, value, icon, color = 'text-slate-900' }: any) => (
-  <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm flex flex-col items-center gap-1">
-    <div className="flex items-center gap-2 mb-1">
-      <div className="text-slate-300">{icon}</div>
-      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{label}</p>
+const SessionOption: React.FC<{ 
+  icon: React.ReactNode; 
+  title: string; 
+  desc: string; 
+  badge: string; 
+  onClick: () => void; 
+}> = ({ icon, title, desc, badge, onClick }) => (
+  <button 
+    onClick={onClick} 
+    className="w-full p-4 sm:p-5 bg-white border border-slate-200/80 hover:border-emerald-300 rounded-2xl flex items-center justify-between transition-all shadow-xs cursor-pointer group text-left"
+  >
+    <div className="flex items-center gap-4">
+      <div className="w-12 h-12 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-center shrink-0">
+        {icon}
+      </div>
+      <div>
+        <div className="flex items-center gap-2">
+          <h4 className="font-bold text-slate-900 text-sm sm:text-base">{title}</h4>
+          <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
+            {badge}
+          </span>
+        </div>
+        <p className="text-xs text-slate-500 font-medium mt-0.5">{desc}</p>
+      </div>
     </div>
-    <p className={`text-xl font-black ${color}`}>{value}</p>
-  </div>
-);
-
-const SessionOption = ({ icon, title, desc, onClick }: any) => (
-  <button onClick={onClick} className="w-full p-6 bg-white border-2 border-slate-100 rounded-[32px] flex items-center gap-5 hover:border-emerald-300 hover:shadow-xl transition-all active:scale-95 group text-left">
-    <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center group-hover:bg-emerald-50 group-hover:scale-110 transition-all">{icon}</div>
-    <div>
-      <h4 className="font-black text-slate-900 leading-none">{title}</h4>
-      <p className="text-xs text-slate-400 font-bold mt-1 uppercase tracking-tighter">{desc}</p>
-    </div>
+    <ChevronRight className="w-5 h-5 text-slate-400 group-hover:text-emerald-600 transition-colors shrink-0" />
   </button>
 );
 
