@@ -6,11 +6,18 @@ export interface AuthUser {
   role: 'student' | 'subscriber' | 'admin';
 }
 
-const AUTHORIZED_ADMIN_EMAILS = [
+const DEFAULT_ADMIN_EMAILS = [
   'democustomersupportservices@gmail.com',
   'admin@demoexams.com.ng',
- 
-]
+  'talentozdavies@gmail.com'
+];
+
+const envAdminEmails = (process.env.ADMIN_EMAILS || '')
+  .split(',')
+  .map(e => e.trim().toLowerCase())
+  .filter(Boolean);
+
+const AUTHORIZED_ADMIN_EMAILS = Array.from(new Set([...DEFAULT_ADMIN_EMAILS, ...envAdminEmails]));
 
 /**
  * Authoritatively verifies Supabase JWT token from the Authorization header.

@@ -27,6 +27,7 @@ import ReferralDashboard from './components/ReferralDashboard';
 import Leaderboard from './components/Leaderboard';
 import AdminPanel from './components/AdminPanel';
 import AuthModal from './components/AuthModal';
+import ResetPassword from './components/ResetPassword';
 import TrialBanner from './components/TrialBanner';
 
 import { 
@@ -68,6 +69,7 @@ const App: React.FC = () => {
   const [showReferralPopup, setShowReferralPopup] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
   const [hasSeenPopup, setHasSeenPopup] = useState(false);
+  const [showResetPassword, setShowResetPassword] = useState(false);
   const [subscriptionState, setSubscriptionState] = useState<any>(null);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
   const [leaderboardEntries, setLeaderboardEntries] = useState<any[]>([]);
@@ -112,6 +114,15 @@ const App: React.FC = () => {
       // Clean up URL
       window.history.replaceState({}, document.title, window.location.pathname);
     }
+
+    // Check if recovery link was opened
+    const isRecovery = 
+      window.location.pathname === '/reset-password' || 
+      window.location.hash.includes('type=recovery') ||
+      (window.location.hash.includes('access_token=') && window.location.hash.includes('recovery'));
+    if (isRecovery) {
+      setShowResetPassword(true);
+    }
   }, []);
 
   // Supabase Auth Session listener
@@ -119,49 +130,59 @@ const App: React.FC = () => {
     let unsubProfile: (() => void) | null = null;
 
     const handleUser = async (user: any, token?: string) => {
-      if (!user) {
-        setProfile(null);
-        setSubscriptionState(null);
-        setIsStartingOnboarding(false);
-        setIsLoadingAuth(false);
-        if (unsubProfile) unsubProfile();
-        return;
-      }
-
-      // Fetch entitlements from server
       try {
-        const accessToken = token || (await supabase.auth.getSession()).data.session?.access_token;
-        if (accessToken) {
-          const entRes = await fetch('/api/getUserEntitlements', {
-            headers: { 'Authorization': `Bearer ${accessToken}` }
-          });
-          if (entRes.ok) {
-            const ent = await entRes.json();
-            setSubscriptionState(ent);
-          }
+        if (!user) {
+          setProfile(null);
+          setSubscriptionState(null);
+          setIsStartingOnboarding(false);
+          setIsLoadingAuth(false);
+          if (unsubProfile) unsubProfile();
+          return;
         }
-      } catch (e) {
-        console.warn('Could not fetch entitlements:', e);
+
+        // Fetch entitlements from server
+        try {
+          const accessToken = token || (await supabase.auth.getSession()).data.session?.access_token;
+          if (accessToken) {
+            const entRes = await fetch('/api/getUserEntitlements', {
+              headers: { 'Authorization': `Bearer ${accessToken}` }
+            });
+            if (entRes.ok) {
+              const ent = await entRes.json();
+              setSubscriptionState(ent);
+            }
+          }
+        } catch (e) {
+          console.warn('Could not fetch entitlements:', e);
+        }
+
+        // Fetch user profile from Supabase
+        const userProfile = await fetchUserProfile(user.id);
+        if (userProfile) {
+          setProfile(userProfile);
+        } else {
+          // New user, needs onboarding
+          setProfile(null);
+          setIsStartingOnboarding(true);
+        }
+
+        // Realtime subscription to user profile changes
+        if (unsubProfile) unsubProfile();
+        unsubProfile = subscribeToUserProfile(user.id, (updated) => {
+          setProfile(updated);
+        });
+      } catch (err) {
+        console.error('Error during handleUser:', err);
+      } finally {
+        setIsLoadingAuth(false);
       }
-
-      // Fetch user profile from Supabase
-      const userProfile = await fetchUserProfile(user.id);
-      if (userProfile) {
-        setProfile(userProfile);
-      } else {
-        // New user, needs onboarding
-        setProfile(null);
-        setIsStartingOnboarding(true);
-      }
-
-      // Realtime subscription to user profile changes
-      if (unsubProfile) unsubProfile();
-      unsubProfile = subscribeToUserProfile(user.id, (updated) => {
-        setProfile(updated);
-      });
-
-      setIsLoadingAuth(false);
     };
+
+    // Clean up OAuth error in hash if present
+    if (window.location.hash.includes('error=') || window.location.hash.includes('error_code=')) {
+      console.warn('OAuth redirect contained error:', window.location.hash);
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
 
     // Initial session check
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -170,10 +191,16 @@ const App: React.FC = () => {
       } else {
         setIsLoadingAuth(false);
       }
+    }).catch((err) => {
+      console.warn('Session check error:', err);
+      setIsLoadingAuth(false);
     });
 
     // Listen to Auth State Changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, newSession) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setShowResetPassword(true);
+      }
       await handleUser(newSession?.user, newSession?.access_token);
     });
 
@@ -322,6 +349,22 @@ const App: React.FC = () => {
   if (showContact) return <ContactSupport onBack={() => setShowContact(false)} />;
   if (showInstall) return <InstallGuide onBack={() => setShowInstall(false)} />;
   if (showAdmin) return <AdminPanel onBack={() => setShowAdmin(false)} />;
+  if (showResetPassword) {
+    return (
+      <ResetPassword 
+        onSuccess={() => {
+          setShowResetPassword(false);
+          setShowAuthModal(true);
+        }}
+        onCancel={() => {
+          setShowResetPassword(false);
+          if (window.history.replaceState) {
+            window.history.replaceState({}, document.title, window.location.pathname === '/reset-password' ? '/' : window.location.pathname);
+          }
+        }}
+      />
+    );
+  }
 
   if (!profile && !isStartingOnboarding) {
     return (
