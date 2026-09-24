@@ -210,8 +210,11 @@ const Dashboard: React.FC<Props> = ({
               <Target className="w-5 h-5 text-slate-700" />
             </div>
             <div>
-              <h4 className="text-sm font-bold text-slate-900">Question Bank</h4>
-              <p className="text-xs text-slate-500 font-normal">Syllabus past questions archive</p>
+              <div className="flex items-center gap-1.5 mb-0.5">
+                <h4 className="text-sm font-bold text-slate-900">Question Bank</h4>
+                <span className="text-[10px] font-bold bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded">Soon</span>
+              </div>
+              <p className="text-xs text-slate-500 font-normal">Past questions archive in curation</p>
             </div>
           </button>
         </div>

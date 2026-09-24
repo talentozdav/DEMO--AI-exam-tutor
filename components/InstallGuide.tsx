@@ -53,7 +53,7 @@ const InstallGuide: React.FC<Props> = ({ onBack }) => {
                 num="1" 
                 icon={<Chrome size={20} className="text-blue-500" />} 
                 title="Open Chrome" 
-                desc="Launch Google Chrome and visit demo-exams.netlify.app" 
+                desc="Launch Google Chrome and visit demoexams.netlify.app" 
               />
               <InstallStep 
                 num="2" 

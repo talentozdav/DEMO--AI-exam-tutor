@@ -73,6 +73,7 @@ const App: React.FC = () => {
   const [subscriptionState, setSubscriptionState] = useState<any>(null);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
   const [leaderboardEntries, setLeaderboardEntries] = useState<any[]>([]);
+  const [isLoadingLeaderboard, setIsLoadingLeaderboard] = useState(false);
 
   // Listen for backend trial-expired event
   useEffect(() => {
@@ -214,6 +215,7 @@ const App: React.FC = () => {
   useEffect(() => {
     if (showLeaderboard) {
       const loadLeaderboard = async () => {
+        setIsLoadingLeaderboard(true);
         try {
           const { data: { user } } = await supabase.auth.getUser();
           const entries = await fetchLeaderboard(10);
@@ -226,6 +228,9 @@ const App: React.FC = () => {
           })));
         } catch (error) {
           console.error("Error fetching leaderboard:", error);
+          setLeaderboardEntries([]);
+        } finally {
+          setIsLoadingLeaderboard(false);
         }
       };
       loadLeaderboard();
@@ -409,7 +414,7 @@ const App: React.FC = () => {
       case 'home': return 'Dashboard';
       case 'subjects': return 'Study Materials';
       case 'tutor': return 'AI Tutor';
-      case 'practice': return 'Question Bank';
+      case 'practice': return 'Question Bank — Coming Soon';
       case 'progress': return 'Performance';
       default: return 'DEMO';
     }
@@ -625,14 +630,8 @@ const App: React.FC = () => {
         {showLeaderboard && (
           <Leaderboard 
             onClose={() => setShowLeaderboard(false)}
-            entries={leaderboardEntries.length > 0 ? leaderboardEntries : [
-              { id: '1', name: 'Oluwaseun A.', activeReferrals: 42, referrals: 150, rank: 1 },
-              { id: '2', name: 'Chidi O.', activeReferrals: 38, referrals: 120, rank: 2 },
-              { id: '3', name: 'Amina B.', activeReferrals: 31, referrals: 95, rank: 3 },
-              { id: '4', name: 'Emeka J.', activeReferrals: 25, referrals: 80, rank: 4 },
-              { id: '5', name: 'Fatima S.', activeReferrals: 19, referrals: 60, rank: 5 },
-              { id: 'user', name: profile?.name || 'You', activeReferrals: profile?.activeReferralCount || 0, referrals: profile?.referralCount || 0, rank: 12, isCurrentUser: true }
-            ]}
+            entries={leaderboardEntries}
+            isLoading={isLoadingLeaderboard}
           />
         )}
       </AnimatePresence>

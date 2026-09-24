@@ -20,9 +20,10 @@ interface LeaderboardEntry {
 interface LeaderboardProps {
   entries: LeaderboardEntry[];
   onClose: () => void;
+  isLoading?: boolean;
 }
 
-const Leaderboard: React.FC<LeaderboardProps> = ({ entries, onClose }) => {
+const Leaderboard: React.FC<LeaderboardProps> = ({ entries, onClose, isLoading }) => {
   // Sort by active referrals strictly based on real database records
   const validEntries = entries || [];
   const sortedEntries = [...validEntries].sort((a, b) => b.activeReferrals - a.activeReferrals);
@@ -51,7 +52,12 @@ const Leaderboard: React.FC<LeaderboardProps> = ({ entries, onClose }) => {
 
         {/* List */}
         <div className="flex-1 overflow-y-auto p-4 space-y-2">
-          {sortedEntries.length === 0 ? (
+          {isLoading ? (
+            <div className="py-12 px-6 text-center space-y-3">
+              <div className="w-8 h-8 border-3 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto" />
+              <p className="text-xs text-gray-500 font-medium">Loading referral rankings...</p>
+            </div>
+          ) : sortedEntries.length === 0 ? (
             <div className="py-12 px-6 text-center space-y-3">
               <div className="w-12 h-12 bg-amber-50 rounded-full flex items-center justify-center mx-auto text-amber-600">
                 <AlertCircle size={24} />
