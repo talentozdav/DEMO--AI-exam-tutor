@@ -16,6 +16,7 @@ const EssayCoach: React.FC<Props> = ({ onBack, profile, onUpdateProfile }) => {
   const [currentIdx, setCurrentIdx] = useState(0);
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [isLoadingQuestions, setIsLoadingQuestions] = useState(true);
   const [results, setResults] = useState<Record<number, any>>({});
   const [activeSubject, setActiveSubject] = useState(profile.selectedSubjects.WAEC?.[0] || profile.selectedSubjects.NECO?.[0] || "English Language");
@@ -25,6 +26,7 @@ const EssayCoach: React.FC<Props> = ({ onBack, profile, onUpdateProfile }) => {
     setIsLoadingQuestions(true);
     setResults({});
     setAnswers({});
+    setAnalysisError(null);
     setCurrentIdx(0);
     const examType = profile.exams.find(e => e === 'WAEC' || e === 'NECO') || 'WAEC';
     const generated = await generatePracticeQuestions(3, examType, activeSubject, 'THEORY');
@@ -32,8 +34,8 @@ const EssayCoach: React.FC<Props> = ({ onBack, profile, onUpdateProfile }) => {
       setQuestions(generated);
     } else {
       setQuestions([{
-        id: 'fallback_1',
-        text: "Discuss the socio-economic impacts of urbanization in Nigeria.",
+        id: 'demo_theory_1',
+        text: "[Demo Question] Discuss the socio-economic impacts of urbanization in Nigeria.",
         explanation: "1. Define Urbanization: The shift from rural to urban areas.\n2. Economic Benefits: Job creation, industrialization.\n3. Social Challenges: Overcrowding, housing shortages.\n4. Infrastructure pressure: Roads, water, electricity.\n5. Summary: Need for sustainable urban planning.",
         type: 'THEORY',
         subjectId: activeSubject,
@@ -54,30 +56,50 @@ const EssayCoach: React.FC<Props> = ({ onBack, profile, onUpdateProfile }) => {
     if (!currentAnswer?.trim()) return;
 
     setIsAnalyzing(true);
-    const examType = profile.exams.find(e => e === 'WAEC' || e === 'NECO') || 'WAEC';
-    const feedback = await analyzeEssay(questions[currentIdx].text, currentAnswer, examType);
-    
-    // Save score to profile for predictor
-    const newScore = {
-      examType: examType as any,
-      subject: activeSubject,
-      score: feedback.score,
-      total: 100,
-      timestamp: Date.now()
-    };
+    setAnalysisError(null);
 
-    const { streak: updatedStreak } = recordDailyActivity(profile.studyStreak);
+    try {
+      const examType = profile.exams.find(e => e === 'WAEC' || e === 'NECO') || 'WAEC';
+      const feedback = await analyzeEssay(questions[currentIdx].text, currentAnswer, examType);
+      
+      if (!feedback || typeof feedback !== 'object' || typeof feedback.score !== 'number') {
+        setAnalysisError("Essay analysis couldn't be completed. Please try again.");
+        return;
+      }
 
-    const updatedProfile = {
-      ...profile,
-      studyStreak: updatedStreak,
-      scores: [...(profile.scores || []), newScore]
-    };
-    onUpdateProfile(updatedProfile);
+      const safeFeedback = {
+        score: Math.max(0, Math.min(100, Math.round(feedback.score))),
+        feedback: typeof feedback.feedback === 'string' && feedback.feedback ? feedback.feedback : 'Essay evaluated.',
+        strengths: Array.isArray(feedback.strengths) ? feedback.strengths : [],
+        weakAreas: Array.isArray(feedback.weakAreas) ? feedback.weakAreas : []
+      };
 
-    setResults(prev => ({ ...prev, [currentIdx]: feedback }));
-    setExpandedSection('strengths');
-    setIsAnalyzing(false);
+      // Save score to profile for predictor
+      const newScore = {
+        examType: examType as any,
+        subject: activeSubject,
+        score: safeFeedback.score,
+        total: 100,
+        timestamp: Date.now()
+      };
+
+      const { streak: updatedStreak } = recordDailyActivity(profile.studyStreak);
+
+      const updatedProfile = {
+        ...profile,
+        studyStreak: updatedStreak,
+        scores: [...(profile.scores || []), newScore]
+      };
+      onUpdateProfile(updatedProfile);
+
+      setResults(prev => ({ ...prev, [currentIdx]: safeFeedback }));
+      setExpandedSection('strengths');
+    } catch (err) {
+      console.error("Essay analysis error:", err);
+      setAnalysisError("Essay analysis couldn't be completed. Please try again.");
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
   const getScoreColor = (score: number) => {
@@ -136,9 +158,27 @@ const EssayCoach: React.FC<Props> = ({ onBack, profile, onUpdateProfile }) => {
               <h3 className="text-2xl font-black text-slate-900 leading-tight mb-6 relative z-10">{currentQ?.text}</h3>
               <div className="flex items-center gap-2 text-emerald-700 bg-emerald-50 w-fit px-4 py-2 rounded-2xl border border-emerald-100">
                 <Target size={14} />
-                <span className="text-[11px] font-black uppercase tracking-tight tracking-widest">Official Standards</span>
+                <span className="text-[11px] font-black uppercase tracking-tight tracking-widest">
+                  {currentQ?.id?.startsWith('demo_') ? 'Demo Practice Task' : 'Theory Task'}
+                </span>
               </div>
             </div>
+
+            {/* Error Message if analysis failed */}
+            {analysisError && (
+              <div className="bg-red-50 border border-red-200 p-4 rounded-2xl flex items-center justify-between gap-3 text-red-800 animate-in fade-in duration-200">
+                <div className="flex items-center gap-2.5">
+                  <AlertCircle className="w-5 h-5 text-red-600 shrink-0" />
+                  <p className="text-xs font-bold">{analysisError}</p>
+                </div>
+                <button 
+                  onClick={handleAnalyze}
+                  className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shrink-0 transition-colors cursor-pointer"
+                >
+                  Retry
+                </button>
+              </div>
+            )}
 
             {/* Editor Area */}
             <div className="space-y-4">
@@ -191,11 +231,11 @@ const EssayCoach: React.FC<Props> = ({ onBack, profile, onUpdateProfile }) => {
                 </div>
               </div>
               <div className="relative z-10">
-                <h3 className="text-2xl font-black uppercase tracking-tight text-slate-900">Official Feedback</h3>
-                <p className="text-sm mt-4 leading-relaxed font-bold text-slate-600 px-4">{currentResult.feedback}</p>
+                <h3 className="text-2xl font-black uppercase tracking-tight text-slate-900">Evaluation & Feedback</h3>
+                <p className="text-sm mt-4 leading-relaxed font-bold text-slate-600 px-4">{currentResult.feedback || 'Essay evaluated.'}</p>
               </div>
               <div className="absolute bottom-0 left-0 w-full h-3 bg-white/50">
-                 <div className="h-full bg-emerald-600 transition-all duration-1500" style={{ width: `${currentResult.score}%` }}></div>
+                 <div className="h-full bg-emerald-600 transition-all duration-1500" style={{ width: `${currentResult.score || 0}%` }}></div>
               </div>
             </div>
 
@@ -203,28 +243,28 @@ const EssayCoach: React.FC<Props> = ({ onBack, profile, onUpdateProfile }) => {
             <div className="space-y-3">
               <ReportSection 
                 id="strengths"
-                title="Syllabus Successes"
+                title="Key Strengths"
                 icon={<CheckCircle2 size={18} />}
                 color="emerald"
-                items={currentResult.strengths}
+                items={currentResult.strengths || []}
                 isExpanded={expandedSection === 'strengths'}
                 onToggle={() => setExpandedSection(expandedSection === 'strengths' ? null : 'strengths')}
               />
               <ReportSection 
                 id="weaknesses"
-                title="Marking Scheme Gaps"
+                title="Improvement Areas"
                 icon={<AlertCircle size={18} />}
                 color="amber"
-                items={currentResult.weakAreas}
+                items={currentResult.weakAreas || []}
                 isExpanded={expandedSection === 'weaknesses'}
                 onToggle={() => setExpandedSection(expandedSection === 'weaknesses' ? null : 'weaknesses')}
               />
               <ReportSection 
                 id="model"
-                title="Model Marking Scheme"
+                title="Model Marking Points"
                 icon={<Flag size={18} />}
                 color="slate"
-                items={currentQ?.explanation.split('\n').filter(l => l.trim())}
+                items={currentQ?.explanation?.split('\n').filter(l => l.trim()) || []}
                 isExpanded={expandedSection === 'model'}
                 onToggle={() => setExpandedSection(expandedSection === 'model' ? null : 'model')}
               />

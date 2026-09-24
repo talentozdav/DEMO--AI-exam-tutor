@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { UserProfile, ExamType, StudyStreak } from '../types';
-import { MOCK_STUDY_PLAN } from '../constants';
 import { recordDailyActivity } from '../utils/streakUtils';
 import StudyStreakCard from './StudyStreakCard';
 import StudyStreakModal from './StudyStreakModal';
@@ -314,34 +313,61 @@ const Dashboard: React.FC<Props> = ({
         />
       </motion.section>
 
-      {/* 7. Today's Smart Study Schedule */}
+      {/* 7. Study Reading Schedule / Plan */}
       <motion.section variants={item} className="space-y-3">
         <div className="flex items-center justify-between px-1">
           <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">
-            Suggested Reading Schedule
+            Study Schedule
           </h3>
-          <span className="text-[11px] font-semibold text-slate-400">Daily syllabus targets</span>
+          <span className="text-[11px] font-semibold text-slate-400">Targeted revision</span>
         </div>
-        <div className="space-y-2">
-          {MOCK_STUDY_PLAN.slice(0, 3).map(plan => (
-            <div 
-              key={plan.id} 
-              className="bg-white p-3.5 rounded-xl border border-slate-200/70 flex items-center gap-3.5 hover:border-slate-300 transition-colors"
-            >
-              <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-                plan.completed ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'
-              }`}>
-                {plan.completed ? <CheckCircle2 className="w-4 h-4" /> : <Clock className="w-4 h-4" />}
+
+        {profile.scores && profile.scores.length > 0 ? (
+          <div className="space-y-2">
+            {profile.scores.slice(-3).reverse().map((sc, idx) => (
+              <div 
+                key={idx} 
+                className="bg-white p-3.5 rounded-xl border border-slate-200/70 flex items-center gap-3.5 hover:border-slate-300 transition-colors cursor-pointer"
+                onClick={() => onNavigate('practice')}
+              >
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                  (sc.score / sc.total) >= 0.7 ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'
+                }`}>
+                  {(sc.score / sc.total) >= 0.7 ? <CheckCircle2 className="w-4 h-4" /> : <Clock className="w-4 h-4" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    {sc.examType} • {sc.subject}
+                  </span>
+                  <p className="text-xs sm:text-sm font-semibold text-slate-800 truncate">
+                    {(sc.score / sc.total) >= 0.7 
+                      ? `Mastery achieved (${Math.round((sc.score / sc.total) * 100)}%) — Reinforce with timed mock`
+                      : `Revision needed (${Math.round((sc.score / sc.total) * 100)}%) — Practice weak question areas`}
+                  </p>
+                </div>
+                <ArrowRight className="w-4 h-4 text-slate-300 shrink-0" />
               </div>
-              <div className="flex-1 min-w-0">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                  {plan.time} • {plan.subject}
-                </span>
-                <p className="text-xs sm:text-sm font-semibold text-slate-800 truncate">{plan.task}</p>
-              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-2xs text-center space-y-2.5">
+            <Calendar className="w-8 h-8 text-slate-300 mx-auto" />
+            <h4 className="text-xs sm:text-sm font-bold text-slate-700">
+              Complete a few practice sessions to generate your study plan.
+            </h4>
+            <p className="text-xs text-slate-400 max-w-sm mx-auto leading-relaxed">
+              Once you practice questions, your schedule will dynamically highlight subjects requiring review.
+            </p>
+            <div className="pt-1">
+              <button
+                onClick={() => onNavigate('practice')}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer shadow-xs"
+              >
+                Start Practice Drill
+              </button>
             </div>
-          ))}
-        </div>
+          </div>
+        )}
       </motion.section>
 
       {/* 8. Secondary Actions (Referral, Admin, Help) */}

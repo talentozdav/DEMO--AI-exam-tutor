@@ -61,57 +61,90 @@ const SubjectsList: React.FC<Props> = ({ profile }) => {
       </motion.div>
 
       <div className="space-y-4">
-        {subjects.map(subject => (
-          <motion.div 
-            key={subject} 
-            variants={item}
-            className="bg-white rounded-2xl border border-slate-100 p-4 space-y-4 shadow-sm hover:border-blue-100 transition-all cursor-pointer group"
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                  <BookOpen className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-slate-900">{subject}</h3>
-                  <div className="flex items-center gap-2">
-                    <div className="w-24 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                      <div className="w-2/3 h-full bg-blue-500"></div>
+        {subjects.map(subject => {
+          const subjectScores = (profile.scores || []).filter(
+            s => s.subject === subject && (s.examType === activeExam || !s.examType)
+          );
+          const totalAttempted = subjectScores.reduce((sum, s) => sum + (s.total || 0), 0);
+          const totalCorrect = subjectScores.reduce((sum, s) => sum + (s.score || 0), 0);
+          const accuracy = totalAttempted > 0 ? Math.round((totalCorrect / totalAttempted) * 100) : null;
+          const isWeak = profile.weakSubjects && profile.weakSubjects.includes(subject);
+
+          return (
+            <motion.div 
+              key={subject} 
+              variants={item}
+              className="bg-white rounded-2xl border border-slate-100 p-4 space-y-4 shadow-sm hover:border-emerald-200 transition-all cursor-pointer group"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 bg-emerald-50 text-emerald-700 rounded-xl flex items-center justify-center group-hover:bg-emerald-600 group-hover:text-white transition-colors">
+                    <BookOpen className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-900">{subject}</h3>
+                    <div className="flex items-center gap-2 mt-1">
+                      <div className="w-24 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                        <div 
+                          className={`h-full ${accuracy !== null && accuracy >= 70 ? 'bg-emerald-500' : 'bg-amber-500'}`}
+                          style={{ width: `${accuracy ?? 0}%` }}
+                        />
+                      </div>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                        {accuracy !== null ? `${accuracy}% Accuracy` : 'Not tested yet'}
+                      </span>
                     </div>
-                    <span className="text-[10px] font-bold text-slate-400">65% COMPLETED</span>
                   </div>
                 </div>
+                <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-emerald-600 transition-colors" />
               </div>
-              <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-blue-500 transition-colors" />
-            </div>
 
-            <div className="grid grid-cols-2 gap-2">
-              <div className="bg-slate-50 p-3 rounded-xl">
-                <p className="text-[10px] font-bold text-slate-400 uppercase">Next Topic</p>
-                <p className="text-xs font-bold text-slate-700 truncate">Probability Distribution</p>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="bg-slate-50 p-3 rounded-xl">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase">Focus Designation</p>
+                  <p className="text-xs font-bold text-slate-700 truncate">
+                    {isWeak ? 'Target Priority (Weak)' : 'Standard Syllabus'}
+                  </p>
+                </div>
+                <div className="bg-slate-50 p-3 rounded-xl flex items-center gap-2">
+                  <Clock className="w-3 h-3 text-emerald-600" />
+                  <span className="text-xs font-bold text-slate-700 truncate">
+                    {totalAttempted > 0 ? `${totalAttempted} Qs Attempted` : 'Drills Available'}
+                  </span>
+                </div>
               </div>
-              <div className="bg-slate-50 p-3 rounded-xl flex items-center gap-2">
-                <Clock className="w-3 h-3 text-blue-500" />
-                <span className="text-xs font-bold text-slate-700">12 min read</span>
-              </div>
-            </div>
-          </motion.div>
-        ))}
+            </motion.div>
+          );
+        })}
       </div>
 
-      <motion.div variants={item} className="bg-slate-900 p-6 rounded-3xl text-white relative overflow-hidden">
-        <div className="relative z-10">
-          <h4 className="text-xl font-bold mb-1">Weekly Challenge</h4>
-          <p className="text-slate-400 text-sm mb-4">Complete 5 topics this week to unlock the full {activeExam} Mock Exam.</p>
-          <div className="flex items-center gap-2">
-            <div className="flex-1 h-2 bg-white/10 rounded-full overflow-hidden">
-              <div className="w-3/5 h-full bg-blue-500"></div>
+      {/* Weekly Challenge with actual session counts */}
+      {(() => {
+        const weeklyCompleted = Math.min(5, (profile.scores || []).length);
+        const challengePercent = (weeklyCompleted / 5) * 100;
+        return (
+          <motion.div variants={item} className="bg-slate-900 p-6 rounded-3xl text-white relative overflow-hidden">
+            <div className="relative z-10">
+              <h4 className="text-xl font-bold mb-1">Weekly Challenge</h4>
+              <p className="text-slate-400 text-sm mb-4">
+                {weeklyCompleted === 0 
+                  ? `Complete 5 practice sessions this week to build your ${activeExam} exam stamina.`
+                  : weeklyCompleted >= 5
+                  ? `Challenge completed! You finished 5 sessions this week.`
+                  : `Complete ${5 - weeklyCompleted} more session${5 - weeklyCompleted === 1 ? '' : 's'} this week to reach your 5-drill goal.`
+                }
+              </p>
+              <div className="flex items-center gap-2">
+                <div className="flex-1 h-2 bg-white/10 rounded-full overflow-hidden">
+                  <div className="h-full bg-emerald-500 transition-all duration-500" style={{ width: `${challengePercent}%` }}></div>
+                </div>
+                <span className="text-xs font-bold">{weeklyCompleted}/5</span>
+              </div>
             </div>
-            <span className="text-xs font-bold">3/5</span>
-          </div>
-        </div>
-        <div className="absolute top-0 right-0 w-32 h-32 bg-blue-600 blur-[80px] opacity-20"></div>
-      </motion.div>
+            <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-600 blur-[80px] opacity-20 pointer-events-none"></div>
+          </motion.div>
+        );
+      })()}
     </motion.div>
   );
 };

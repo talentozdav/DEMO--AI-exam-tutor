@@ -39,7 +39,7 @@ const QuestionBank: React.FC<Props> = ({ profile, onStartEssay, onStartCBT }) =>
       <div className="space-y-1">
         <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Question Bank Archive</h2>
         <p className="text-xs sm:text-sm text-slate-500 font-medium">
-          Access official syllabus-aligned questions and launch targeted practice sessions.
+          Access exam past questions and launch targeted practice sessions.
         </p>
       </div>
 
@@ -164,7 +164,7 @@ const QuestionBank: React.FC<Props> = ({ profile, onStartEssay, onStartCBT }) =>
                   </div>
                   <div>
                     <h4 className="font-bold text-slate-800 text-xs sm:text-sm">{subject}</h4>
-                    <span className="text-[10px] font-semibold text-emerald-700">Official Syllabus Active</span>
+                    <span className="text-[10px] font-semibold text-emerald-700">Syllabus Active</span>
                   </div>
                 </div>
                 <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-emerald-600 transition-colors shrink-0" />

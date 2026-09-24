@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { UserProfile, Question } from '../types';
-import { MOCK_QUESTIONS } from '../constants';
 import { generatePracticeQuestions } from '../services/geminiService';
 import { supabase } from '../lib/supabaseClient';
 import { recordDailyActivity } from '../utils/streakUtils';
@@ -39,10 +38,12 @@ const CBTPractice: React.FC<Props> = ({ onBack, profile, onUpdateProfile }) => {
   const [isFinished, setIsFinished] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [reviewOnlyMistakes, setReviewOnlyMistakes] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const startSession = async (selectedMode: SessionMode) => {
     setMode(selectedMode);
     setIsGenerating(true);
+    setError(null);
     setAnswers({});
     setCurrentIdx(0);
     setIsFinished(false);
@@ -72,13 +73,14 @@ const CBTPractice: React.FC<Props> = ({ onBack, profile, onUpdateProfile }) => {
       if (generated && generated.length > 0) {
         setQuestions(generated);
       } else {
-        setQuestions(MOCK_QUESTIONS.filter(q => q.examType === 'JAMB').slice(0, count));
+        setError("We couldn't load this practice session. Please try again.");
       }
-    } catch (error) {
-      setQuestions(MOCK_QUESTIONS.filter(q => q.examType === 'JAMB').slice(0, count));
+    } catch (err) {
+      console.error("CBT question generation failed:", err);
+      setError("We couldn't load this practice session. Please try again.");
+    } finally {
+      setIsGenerating(false);
     }
-    
-    setIsGenerating(false);
   };
 
   useEffect(() => {
@@ -207,6 +209,39 @@ const CBTPractice: React.FC<Props> = ({ onBack, profile, onUpdateProfile }) => {
         <div className="space-y-1">
           <h3 className="text-lg font-bold text-slate-900">Preparing Your CBT Exam</h3>
           <p className="text-xs text-slate-500">Retrieving syllabus questions and verifying answer keys...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Error state if question retrieval fails
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-140px)] p-6 text-center space-y-4 max-w-md mx-auto">
+        <div className="w-14 h-14 bg-red-50 text-red-600 rounded-2xl flex items-center justify-center mx-auto">
+          <XCircle className="w-8 h-8" />
+        </div>
+        <div className="space-y-1.5">
+          <h3 className="text-lg font-black text-slate-900 leading-snug">
+            We couldn't load this practice session. Please try again.
+          </h3>
+          <p className="text-xs text-slate-500 leading-relaxed">
+            There was a problem retrieving exam questions. Please verify your connection and retry.
+          </p>
+        </div>
+        <div className="flex flex-col w-full gap-2.5 pt-2">
+          <button
+            onClick={() => mode && startSession(mode)}
+            className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs uppercase tracking-wider shadow-sm transition-all cursor-pointer flex items-center justify-center gap-2"
+          >
+            <RotateCcw className="w-4 h-4" /> Try Again
+          </button>
+          <button
+            onClick={() => { setMode(null); setError(null); }}
+            className="w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs uppercase tracking-wider transition-colors cursor-pointer"
+          >
+            Choose Different Mode
+          </button>
         </div>
       </div>
     );
